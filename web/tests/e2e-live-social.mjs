@@ -55,7 +55,12 @@ console.log("Other side accepts → Alex sees friend + notification");
 const rel = (await call("GET", "/friends", bella.token)).json.friends;
 const alexId = rel.find((x) => x.status === "incoming")?.user.id;
 check("Bella sees an incoming request from Alex", !!alexId);
+await page.getByRole("tab", { name: /Friends/ }).first().click().catch(() => undefined);
 check("accept API ok", (await call("POST", `/friends/${alexId}/accept`, bella.token)).status === 200);
+// Alex stays on the page: coming back to the app (visibility change) must refresh the list without a navigation.
+await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+await page.getByText("Bella Khan").first().waitFor({ timeout: 5000 });
+check("friends list refreshes on app resume (no manual reload)", true);
 await page.goto(`${BASE}/friends`);
 await page.getByText("Bella Khan").first().waitFor();
 check("friends tab shows Bella", (await page.locator(".user-row", { hasText: "Bella Khan" }).count()) === 1);
@@ -100,6 +105,6 @@ const inbox = (await call("GET", "/notifications", me.json.tokens.access_token))
 check("mark-all-read persisted (unread_count 0)", inbox.unread_count === 0, JSON.stringify(inbox.unread_count));
 
 console.log("Errors");
-check("unknown profile id → not-found state", await (async () => { await page.goto(`${BASE}/profile/00000000-0000-0000-0000-000000000000`); return page.getByText("Profile not found").isVisible(); })());
+check("unknown profile id → not-found state", await (async () => { await page.goto(`${BASE}/profile/00000000-0000-0000-0000-000000000000`); return page.getByText("Profile not found").waitFor({ timeout: 5000 }).then(() => true, () => false); })());
 check("no uncaught console/page errors", errors.length === 0, JSON.stringify(errors));
 await finish();
