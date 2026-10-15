@@ -151,6 +151,7 @@ func main() {
 		MaxAudioBytes:    cfg.Media.MaxAudioBytes,
 		MaxDocumentBytes: cfg.Media.MaxDocumentBytes,
 	}, int(cfg.S3.PresignTTL.Seconds()))
+	usersSvc.SetAvatarMedia(mediaSvc) // profile pictures reuse the media pipeline
 	mediaHandler := media.NewHandler(mediaSvc, log)
 
 	chatSvc := chat.NewService(chatRepo, chatHub, chatPresence, outbox, mediaSvc, contactsRepo)
