@@ -24,6 +24,8 @@ type K = "displayName" | "username" | "bio";
 function EditProfile({ me, onClose }: { me: User; onClose: () => void }) {
   const [v, setV] = useState({ displayName: me.displayName, username: me.username, bio: me.bio ?? "" });
   const [avatar, setAvatar] = useState(me.avatarUrl);
+  const [avatarMediaId, setAvatarMediaId] = useState<string | undefined>(); // undefined = unchanged, "" = remove
+  const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState<FieldErrors<K | "avatar">>({});
   const [busy, setBusy] = useState(false);
   const file = useRef<HTMLInputElement | null>(null);
@@ -33,12 +35,17 @@ function EditProfile({ me, onClose }: { me: User; onClose: () => void }) {
     if (!f) return;
     if (!f.type.startsWith("image/")) return setErrors((e) => ({ ...e, avatar: "Choose an image file" }));
     if (f.size > 5 * 1024 * 1024) return setErrors((e) => ({ ...e, avatar: "Image must be under 5 MB" }));
+    setUploading(true);
     try {
-      const a = await services.uploads.upload(f);
-      setAvatar(a.url);
+      const small = await shrinkImage(f);
+      const a = await services.uploads.upload(small);
+      setAvatar(URL.createObjectURL(small)); // instant local preview; the saved picture is served by the API afterwards
+      setAvatarMediaId(a.id);
       setErrors((e) => ({ ...e, avatar: undefined }));
     } catch (err) {
       setErrors((e) => ({ ...e, avatar: errorMessage(err) }));
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -49,7 +56,7 @@ function EditProfile({ me, onClose }: { me: User; onClose: () => void }) {
     if (hasErrors(e)) return;
     setBusy(true);
     try {
-      const u = await services.users.updateProfile({ displayName: v.displayName, username: v.username, bio: v.bio, avatarUrl: avatar });
+      const u = await services.users.updateProfile({ displayName: v.displayName, username: v.username, bio: v.bio, avatarUrl: avatar, avatarMediaId });
       cacheUsers([u]);
       toast.success("Profile updated");
       onClose();
@@ -66,8 +73,8 @@ function EditProfile({ me, onClose }: { me: User; onClose: () => void }) {
         <div className="avatar-edit">
           <Avatar name={v.displayName || me.displayName} id={me.id} src={avatar} size={72} />
           <input ref={file} type="file" accept="image/*" hidden tabIndex={-1} aria-hidden="true" onChange={(e: any) => void pick(e.target.files?.[0])} />
-          <Button size="sm" variant="secondary" onClick={() => file.current?.click()}><Icon name="camera" size={16} /> Change photo</Button>
-          {avatar && <Button size="sm" variant="ghost" onClick={() => setAvatar(undefined)}>Remove</Button>}
+          <Button size="sm" variant="secondary" loading={uploading} onClick={() => file.current?.click()}><Icon name="camera" size={16} /> Change photo</Button>
+          {avatar && <Button size="sm" variant="ghost" onClick={() => { setAvatar(undefined); setAvatarMediaId(""); }}>Remove</Button>}
         </div>
         {errors.avatar && <div className="field-error" role="alert">{errors.avatar}</div>}
         <Input label="Display name" value={v.displayName} onChange={set("displayName")} error={errors.displayName} maxLength={50} autoComplete="name" />
@@ -83,6 +90,26 @@ function EditProfile({ me, onClose }: { me: User; onClose: () => void }) {
       </form>
     </Modal>
   );
+}
+
+/** Profile pictures are shown at most ~100px: scale to 512px and re-encode as JPEG so uploads are small and always an allowed type. */
+async function shrinkImage(file: File): Promise<File> {
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 512 / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bmp, 0, 0, w, h);
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.85));
+    return blob ? new File([blob], "avatar.jpg", { type: "image/jpeg" }) : file;
+  } catch {
+    return file; // not decodable here (e.g. HEIC): let the server's allow-list decide
+  }
 }
 
 export default function ProfilePage({ id }: { id?: string }) {
