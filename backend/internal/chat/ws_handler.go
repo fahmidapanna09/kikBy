@@ -130,21 +130,60 @@ func (h *WSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	_ = h.presence.MarkOnline(ctx, userID)
 	h.broadcastPresence(ctx, userID, true)
+	h.sendPresenceSnapshot(ctx, c)
 
 	go h.writePump(c)
 	h.readPump(ctx, c) // blocks until the connection closes
 
 	h.hub.Unregister(c)
 	h.dropCalls(ctx, userID)
+	if h.hub.IsUserOnlineLocally(userID) {
+		return // another tab/device of this user is still connected: they are still online
+	}
 	_ = h.presence.MarkOffline(ctx, userID)
 	h.broadcastPresence(ctx, userID, false)
 }
 
+// broadcastPresence tells the user's friends and conversation peers that they went online/offline.
+// Best-effort: a failure only means a peer's dot is stale until their next reconnect.
 func (h *WSHandler) broadcastPresence(ctx context.Context, userID string, online bool) {
-	// In a full implementation this fans out to the user's contacts only
-	// (a contacts-list query), not globally — left as a Phase 3 (contacts
-	// module) integration point. For now presence is available via the
-	// conversation membership path (typing/read already scope to it).
+	peers, err := h.svc.PresencePeers(ctx, userID)
+	if err != nil {
+		h.log.Warn("presence: peer lookup failed", zap.Error(err))
+		return
+	}
+	payload := PresencePayload{UserID: userID, Online: online}
+	if !online {
+		now := time.Now().UTC()
+		payload.LastSeen = &now
+	}
+	for _, peer := range peers {
+		env := NewEnvelope(EventPresenceUpdate, "", "", payload)
+		if err := h.hub.Publish(ctx, peer, env); err != nil {
+			h.log.Warn("presence: publish failed", zap.Error(err))
+		}
+	}
+}
+
+// sendPresenceSnapshot tells a freshly connected client which of its friends/peers are online right now,
+// so green dots are right immediately instead of only after somebody's next connect/disconnect.
+func (h *WSHandler) sendPresenceSnapshot(ctx context.Context, c *conn) {
+	peers, err := h.svc.PresencePeers(ctx, c.userID)
+	if err != nil {
+		h.log.Warn("presence: snapshot lookup failed", zap.Error(err))
+		return
+	}
+	for _, peer := range peers {
+		online, err := h.presence.IsOnline(ctx, peer)
+		if err != nil || !online {
+			continue
+		}
+		env := NewEnvelope(EventPresenceUpdate, "", c.deviceID, PresencePayload{UserID: peer, Online: true})
+		select {
+		case c.send <- env:
+		default:
+		}
+	}
 }
 
 func (h *WSHandler) readPump(ctx context.Context, c *conn) {
