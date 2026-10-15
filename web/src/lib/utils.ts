@@ -95,7 +95,7 @@ export function sanitizeText(input: string, max = 4000): string {
 /** Only http(s)/blob/data:image URLs may be used for <img src>/<a href>. Blocks javascript: etc. */
 export function safeUrl(url: string | undefined): string | undefined {
   if (!url) return undefined;
-  return /^(https?:|blob:|data:image\/(png|jpe?g|gif|webp);)/i.test(url) ? url : undefined;
+  return /^(https?:|blob:|data:image\/(png|jpe?g|gif|webp);)/i.test(url) || /^\/(?!\/)[\w\-./%?=&]*$/.test(url) ? url : undefined; // + same-origin paths (profile-picture links)
 }
 
 /** Split text into plain / URL parts so links can be rendered as safe <a> elements. */
