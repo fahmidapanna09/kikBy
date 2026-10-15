@@ -102,6 +102,12 @@ func (r *Repository) UpdateProfile(ctx context.Context, userID string, req Updat
 			return err
 		}
 	}
+	if req.AvatarMediaID != nil && *req.AvatarMediaID == "" { // "" removes the picture
+		if _, err := r.pool.Exec(ctx, `UPDATE user_profiles SET avatar_media_id = NULL WHERE user_id = $1`, userID); err != nil {
+			return err
+		}
+		req.AvatarMediaID = nil
+	}
 	_, err := r.pool.Exec(ctx, `
 		UPDATE user_profiles SET
 			display_name = COALESCE($2, display_name),
@@ -128,4 +134,14 @@ func (r *Repository) ReportUser(ctx context.Context, reporterID, reportedID, rea
 		reporterID, reportedID, reason, contextMessageID,
 	)
 	return err
+}
+
+// AvatarMediaID returns the user's profile-picture media id, or "" when none is set (or the user does not exist).
+func (r *Repository) AvatarMediaID(ctx context.Context, userID string) (string, error) {
+	var id *string
+	err := r.pool.QueryRow(ctx, `SELECT p.avatar_media_id::text FROM user_profiles p JOIN users u ON u.id = p.user_id WHERE p.user_id = $1 AND u.deleted_at IS NULL`, userID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) || id == nil {
+		return "", nil
+	}
+	return *id, err
 }
