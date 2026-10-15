@@ -4,6 +4,7 @@ import { errorMessage } from "@/services/errors";
 import { session } from "@/services/session";
 import { attachmentLabel, uid } from "@/lib/utils";
 import { store } from "./store";
+import { rememberPresence } from "./presenceMemo";
 import type { MessageThread } from "./store";
 import { cacheUsers, loadConversations } from "./actions";
 
@@ -278,6 +279,7 @@ export function setTyping(convId: ID, userId: ID, on: boolean) {
 }
 
 export function setPresence(userId: ID, presence: "online" | "offline", lastSeenAt?: string) {
+  rememberPresence(userId, presence, lastSeenAt);
   store.set((s) => (s.users[userId] ? { users: { ...s.users, [userId]: { ...s.users[userId], presence, lastSeenAt: lastSeenAt ?? s.users[userId].lastSeenAt } } } : {}));
 }
 
