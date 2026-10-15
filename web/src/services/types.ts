@@ -22,7 +22,12 @@ export interface AuthService {
 export interface UserService {
   me(): Promise<User>;
   getProfile(id: ID): Promise<User>;
-  updateProfile(patch: Partial<Pick<User, "displayName" | "username" | "bio" | "avatarUrl" | "email" | "phone">>): Promise<User>;
+  updateProfile(
+    patch: Partial<Pick<User, "displayName" | "username" | "bio" | "avatarUrl" | "email" | "phone">> & {
+      /** Live only: uploaded image's media id to use as the profile picture; "" removes it; undefined leaves it unchanged. */
+      avatarMediaId?: string;
+    },
+  ): Promise<User>;
   search(query: string): Promise<User[]>;
   /**
    * Change the sign-in e-mail. Live: needs the current password and only *requests* the change (a 6-digit confirmation code goes to the
