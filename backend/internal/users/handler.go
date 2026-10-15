@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/yourorg/chatplatform/internal/platform/middleware"
@@ -23,15 +24,19 @@ func NewHandler(svc *Service, log *zap.Logger) *Handler {
 
 func (h *Handler) Routes(verifier middleware.TokenVerifier) chi.Router {
 	r := chi.NewRouter()
-	r.Use(middleware.RequireAuth(verifier))
-	r.Get("/me", h.getMe)
-	r.Patch("/me", h.updateMe)
-	r.Patch("/username", h.updateUsername)
-	r.Get("/me/settings", h.getSettings)
-	r.Put("/me/settings", h.putSettings)
-	r.Get("/search", h.search)
-	r.Get("/{userID}", h.getPublicProfile)
-	r.Post("/{userID}/report", h.reportUser)
+	// Public on purpose: <img src> cannot send an Authorization header. It only redirects to a short-lived signed link.
+	r.Get("/{userID}/avatar", h.avatar)
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.RequireAuth(verifier))
+		r.Get("/me", h.getMe)
+		r.Patch("/me", h.updateMe)
+		r.Patch("/username", h.updateUsername)
+		r.Get("/me/settings", h.getSettings)
+		r.Put("/me/settings", h.putSettings)
+		r.Get("/search", h.search)
+		r.Get("/{userID}", h.getPublicProfile)
+		r.Post("/{userID}/report", h.reportUser)
+	})
 	return r
 }
 
@@ -172,4 +177,25 @@ var isValidE164 = func(phone string) bool {
 		}
 	}
 	return phone[1] != '0'
+}
+
+// avatar redirects to a short-lived signed link for the user's profile picture (404 when there is none).
+func (h *Handler) avatar(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "userID")
+	if _, err := uuid.Parse(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	url, err := h.svc.AvatarURL(r.Context(), id)
+	if err != nil {
+		if !errors.Is(err, ErrNoAvatar) {
+			h.log.Warn("avatar link failed", zap.Error(err), zap.String("user_id", id))
+		}
+		w.Header().Set("Cache-Control", "public, max-age=120")
+		http.NotFound(w, r)
+		return
+	}
+	// shorter than the signed link's lifetime, so a cached redirect never points at an expired URL
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	http.Redirect(w, r, url, http.StatusFound)
 }
