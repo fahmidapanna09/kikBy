@@ -13,6 +13,8 @@ var (
 	ErrInvalidUsername  = errors.New("users: username must be 3-20 characters, start with a letter, and contain only lowercase letters, numbers, or underscores")
 	ErrRateLimited      = errors.New("users: rate limited")
 	ErrCannotReportSelf = errors.New("users: cannot report yourself")
+	ErrNoAvatar         = errors.New("users: no profile picture")
+	ErrBadAvatar        = errors.New("users: profile picture must be an uploaded JPEG, PNG or WebP image of yours")
 )
 
 // usernamePattern intentionally requires lowercase — usernames are matched
@@ -21,10 +23,20 @@ var (
 // between "what's stored" and "what's displayed".
 var usernamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{2,19}$`)
 
+// AvatarMedia is satisfied by *media.Service (wired in main.go) without importing the media package.
+type AvatarMedia interface {
+	VerifyOwnedUploaded(ctx context.Context, userID, mediaID string) (kind string, mimeType string, err error)
+	PresignAvatar(ctx context.Context, mediaID string) (string, error)
+}
+
 type Service struct {
 	repo    *Repository
 	limiter *ratelimit.Limiter
+	avatar  AvatarMedia // nil until SetAvatarMedia: profile pictures are then refused
 }
+
+// SetAvatarMedia enables profile pictures (the media service is built after this one, hence a setter).
+func (s *Service) SetAvatarMedia(m AvatarMedia) { s.avatar = m }
 
 func NewService(repo *Repository, limiter *ratelimit.Limiter) *Service {
 	return &Service{repo: repo, limiter: limiter}
@@ -44,10 +56,35 @@ func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdatePr
 	if req.ContactPhone != nil && *req.ContactPhone != "" && !isValidE164(*req.ContactPhone) {
 		return MeResponse{}, errors.New("users: contact_phone must be in E.164 format")
 	}
+	if req.AvatarMediaID != nil && *req.AvatarMediaID != "" {
+		// Only the caller's own, finished image upload may become the profile picture (the public avatar link serves it to everyone).
+		if s.avatar == nil {
+			return MeResponse{}, ErrBadAvatar
+		}
+		kind, mime, err := s.avatar.VerifyOwnedUploaded(ctx, userID, *req.AvatarMediaID)
+		if err != nil || kind != "image" || (mime != "image/jpeg" && mime != "image/png" && mime != "image/webp") {
+			return MeResponse{}, ErrBadAvatar
+		}
+	}
 	if err := s.repo.UpdateProfile(ctx, userID, req); err != nil {
 		return MeResponse{}, err
 	}
 	return s.repo.GetMe(ctx, userID)
+}
+
+// AvatarURL returns a short-lived link to the user's profile picture, or ErrNoAvatar.
+func (s *Service) AvatarURL(ctx context.Context, userID string) (string, error) {
+	if s.avatar == nil {
+		return "", ErrNoAvatar
+	}
+	mediaID, err := s.repo.AvatarMediaID(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if mediaID == "" {
+		return "", ErrNoAvatar
+	}
+	return s.avatar.PresignAvatar(ctx, mediaID)
 }
 
 func (s *Service) UpdateUsername(ctx context.Context, userID, newUsername string) (MeResponse, error) {
