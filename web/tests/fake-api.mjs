@@ -39,7 +39,7 @@ function mint(userId, device = "") {
   refresh.set(r, { userId, used: false, device });
   return { access_token: a, refresh_token: r, access_expires_at: new Date(Date.now() + ACCESS_TTL_MS).toISOString(), refresh_expires_at: new Date(Date.now() + 864e5).toISOString() };
 }
-const me = (u) => ({ user_id: u.id, username: u.username, email: u.email, contact_phone: u.contact_phone || undefined, display_name: u.display_name, about: u.about || undefined, email_verified: !!u.verified, pending_email: u.pending || undefined, last_seen_visibility: "everyone" });
+const me = (u) => ({ user_id: u.id, username: u.username, email: u.email, contact_phone: u.contact_phone || undefined, display_name: u.display_name, about: u.about || undefined, email_verified: !!u.verified, pending_email: u.pending || undefined, last_seen_visibility: "everyone", avatar_media_id: u.avatar || undefined });
 
 const lite = (u) => ({ id: u.id, username: u.username, display_name: u.display_name || u.username, about: u.about || undefined });
 const pair = (x, y) => friendships.find((f) => (f.a === x && f.b === y) || (f.a === y && f.b === x));
@@ -451,17 +451,25 @@ export function start(port) {
       for (const v of refresh.values()) if (v.userId === t.userId) v.used = true;
       return json(res, 200, { status: "password_updated" });
     }
+    { // GET /v1/users/{id}/avatar is PUBLIC (an <img> cannot send a bearer token): 302 to a signed link, or 404
+      const m = req.method === "GET" && path.match(/^\/v1\/users\/([^/]+)\/avatar$/);
+      if (m) {
+        const u = users.get(m[1]);
+        if (!u?.avatar) { res.writeHead(404, { "Cache-Control": "public, max-age=120" }); return res.end("404 page not found"); }
+        res.writeHead(302, { Location: `http://localhost:${port}/storage/${u.avatar}?sig=a${++mediaLog.downloads}`, "Cache-Control": "private, max-age=300" }); return res.end();
+      }
+    }
     if (path.startsWith("/v1/users")) {
       if (!authed) return err(res, 401, "unauthorized", "missing or invalid token");
       if (req.method === "GET" && path === "/v1/users/search") {
         const q = (new URL(req.url, "http://x").searchParams.get("username") || "").toLowerCase();
         const hits = [...users.values()].filter((u) => u.id !== authed.id && u.username.startsWith(q) && !blocks.has(u.id + ">" + authed.id));
-        return json(res, 200, { users: hits.slice(0, 20).map((u) => ({ user_id: u.id, username: u.username, display_name: u.display_name, about: u.about || undefined })) });
+        return json(res, 200, { users: hits.slice(0, 20).map((u) => ({ user_id: u.id, username: u.username, display_name: u.display_name, about: u.about || undefined, avatar_media_id: u.avatar || undefined })) });
       }
       if (req.method === "GET" && /^\/v1\/users\/[0-9a-f-]{36}$/.test(path)) {
         const u = users.get(path.split("/")[3]);
         if (!u) return err(res, 404, "not_found", "user not found");
-        return json(res, 200, { user_id: u.id, username: u.username, display_name: u.display_name, about: u.about || undefined });
+        return json(res, 200, { user_id: u.id, username: u.username, display_name: u.display_name, about: u.about || undefined, avatar_media_id: u.avatar || undefined });
       }
       if (path === "/v1/users/me/settings") {
         if (req.method === "GET") return json(res, 200, { settings: authed.settings ?? null });
@@ -472,6 +480,14 @@ export function start(port) {
         if (body.contact_phone && !/^\+[1-9]\d{6,14}$/.test(body.contact_phone)) return err(res, 400, "invalid_update", "users: contact_phone must be in E.164 format");
         if (body.display_name !== undefined) authed.display_name = body.display_name;
         if (body.about !== undefined) authed.about = body.about;
+        if (body.avatar_media_id !== undefined) {
+          if (body.avatar_media_id === "") authed.avatar = undefined;
+          else {
+            const f = media.get(body.avatar_media_id);
+            if (!f || f.owner !== authed.id || f.status !== "uploaded" || f.kind !== "image" || !["image/jpeg", "image/png", "image/webp"].includes(f.mime)) return err(res, 400, "invalid_update", "users: profile picture must be an uploaded JPEG, PNG or WebP image of yours");
+            authed.avatar = body.avatar_media_id;
+          }
+        }
         if (body.contact_phone !== undefined) authed.contact_phone = body.contact_phone || undefined;
         return json(res, 200, me(authed));
       }
