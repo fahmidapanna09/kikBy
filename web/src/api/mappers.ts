@@ -1,4 +1,8 @@
 import type { AppNotification, Friend, User } from "@/types/models";
+import { config } from "@/services/config";
+
+/** Public, cache-friendly link to a user's profile picture (the server redirects to a short-lived signed URL). `v` busts the cache when it changes. */
+export const avatarLink = (userId: string, mediaId?: string) => `${config.apiBase}/users/${encodeURIComponent(userId)}/avatar${mediaId ? `?v=${encodeURIComponent(mediaId)}` : ""}`;
 
 /** GET /v1/users/me (backend users.MeResponse, snake_case) → web User. */
 export interface ApiMe {
@@ -25,6 +29,7 @@ export function toUser(m: ApiMe, createdAt = new Date().toISOString()): User {
     // verified OTP number wins; otherwise the optional unverified contact number
     phone: m.phone_number || m.contact_phone || undefined,
     bio: m.about || undefined,
+    avatarUrl: m.avatar_media_id ? avatarLink(m.user_id, m.avatar_media_id) : undefined,
     presence: "online",
     createdAt,
   };
@@ -44,10 +49,11 @@ export interface ApiPublicProfile {
   username: string;
   display_name?: string;
   about?: string;
+  avatar_media_id?: string;
 }
 
 export function fromPublic(p: ApiPublicProfile): User {
-  return { id: p.user_id, username: p.username, displayName: p.display_name || p.username, bio: p.about || undefined, presence: "offline", createdAt: new Date(0).toISOString() };
+  return { id: p.user_id, username: p.username, displayName: p.display_name || p.username, bio: p.about || undefined, avatarUrl: p.avatar_media_id ? avatarLink(p.user_id, p.avatar_media_id) : undefined, presence: "offline", createdAt: new Date(0).toISOString() };
 }
 
 /** Friend row from /v1/friends (backend friends.Relation). */

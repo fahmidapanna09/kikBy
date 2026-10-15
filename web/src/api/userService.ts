@@ -80,6 +80,7 @@ export const liveUserService: UserService = {
     const body: Record<string, unknown> = {};
     if (patch.displayName !== undefined) body.display_name = patch.displayName;
     if (patch.bio !== undefined) body.about = patch.bio;
+    if (patch.avatarMediaId !== undefined) body.avatar_media_id = patch.avatarMediaId;
     if (patch.phone !== undefined) body.contact_phone = normalizePhone(patch.phone); // backend expects E.164; "" removes it
     const me = Object.keys(body).length ? await http<ApiMe>("/users/me", { method: "PATCH", body }) : await http<ApiMe>("/users/me");
     const u = toUser(me);
