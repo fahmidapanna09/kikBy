@@ -1,0 +1,10 @@
+DROP TRIGGER IF EXISTS trg_channels_updated_at ON channels;
+DROP TABLE IF EXISTS channel_reports;
+DROP TABLE IF EXISTS channel_poll_votes;
+DROP TABLE IF EXISTS channel_poll_options;
+DROP TABLE IF EXISTS channel_post_views;
+DROP TABLE IF EXISTS channel_post_reactions;
+DROP TABLE IF EXISTS channel_posts;
+DROP TABLE IF EXISTS channel_followers;
+DROP TABLE IF EXISTS channel_admins;
+DROP TABLE IF EXISTS channels;

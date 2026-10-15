@@ -1,0 +1,126 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chatapp
+      POSTGRES_PASSWORD: chatapp_dev_password
+      POSTGRES_DB: chatapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: elestio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: chatapp_minio
+      MINIO_ROOT_PASSWORD: chatapp_minio_password
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: elestio/minio:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 chatapp_minio chatapp_minio_password &&
+      mc mb --ignore-existing local/chatapp-media
+      "
+
+  migrate:
+    image: migrate/migrate:v4.17.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations
+    command: [
+      "-path", "/migrations",
+      "-database", "postgres://chatapp:chatapp_dev_password@postgres:5432/chatapp?sslmode=disable",
+      "up"
+    ]
+
+  api:
+    build:
+      context: .
+      args:
+        CMD_PATH: ./cmd/api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DSN: postgres://chatapp:chatapp_dev_password@postgres:5432/chatapp?sslmode=disable
+      REDIS_ADDR: redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: chatapp-media
+      S3_ACCESS_KEY_ID: chatapp_minio
+      S3_SECRET_ACCESS_KEY: chatapp_minio_password
+      S3_USE_PATH_STYLE: "true"
+
+  worker:
+    build:
+      context: .
+      args:
+        CMD_PATH: ./cmd/worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DSN: postgres://chatapp:chatapp_dev_password@postgres:5432/chatapp?sslmode=disable
+      REDIS_ADDR: redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: chatapp-media
+      S3_ACCESS_KEY_ID: chatapp_minio
+      S3_SECRET_ACCESS_KEY: chatapp_minio_password
+      S3_USE_PATH_STYLE: "true"
+
+volumes:
+  pgdata:
+  miniodata:

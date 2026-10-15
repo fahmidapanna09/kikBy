@@ -1,0 +1,64 @@
+/* KikBite design tokens — ported 1:1 from the approved UI/UX design (dark-first). */
+:root {
+  --bg: #070b16;
+  --surface: #101827;
+  --surface-2: #162033;
+  --surface-3: #1d2a42;
+  --primary: #6d4aff;
+  --secondary: #4d8dff;
+  --accent: #8b5cf6;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --text: #f8fafc;
+  --text-dim: #94a3b8;
+  --text-faint: #5b6b85;
+  --border: #1e293b;
+  --border-strong: #2a3b55;
+
+  --av1: #6d4aff;
+  --av2: #4d8dff;
+  --av3: #8b5cf6;
+  --av4: #f59e0b;
+  --av5: #22c55e;
+  --av6: #ec6fbb;
+
+  --grad: linear-gradient(135deg, var(--primary), var(--secondary));
+
+  --font-display: "Manrope", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 24px;
+  --r-bubble: 15px;
+
+  --shadow-pop: 0 16px 32px -10px rgba(0, 0, 0, 0.65);
+  --scrim: rgba(2, 3, 10, 0.62);
+
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--secondary);
+
+  --sidebar-w: 72px;
+  --list-w: 360px;
+  --details-w: 320px;
+  --topbar-h: 56px;
+  --bottomnav-h: 60px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 160ms;
+
+  --font-scale: 1;
+  color-scheme: dark;
+}
+
+/* Appearance settings hooks (set on <html> by the settings store) */
+html[data-density="compact"] { --row-pad: 8px; }
+html[data-density="comfortable"], html:not([data-density]) { --row-pad: 12px; }
+html[data-reduce-motion="true"] *, html[data-reduce-motion="true"] *::before, html[data-reduce-motion="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

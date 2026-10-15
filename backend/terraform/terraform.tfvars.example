@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars and fill in before a real `terraform apply`.
+# Never commit the real terraform.tfvars if it ends up holding anything
+# sensitive (it shouldn't — secrets.tf generates its own, this file is
+# just sizing/naming knobs).
+
+aws_region  = "ap-southeast-1"
+environment = "staging"
+
+# Leave both empty for a first load-test pass reachable at the ALB's own
+# DNS name over plain HTTP (see outputs.tf's api_url) — fill in only once
+# you have a real domain and an existing Route53 hosted zone for it.
+domain_name     = ""
+route53_zone_id = ""
+
+# Built and pushed by CI (or by hand — see ../RUNBOOK.md step 3) from
+# backend/Dockerfile. There is no default: the ECS task definition
+# cannot start without a real image here.
+api_image = "" # e.g. "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/chatplatform-api:v0.1.0"
+
+api_desired_count = 2 # >= 2 is required for the WS-failover drill (RUNBOOK.md step 7) to be testable at all
+
+media_bucket_name = "" # leave empty to auto-generate a unique name

@@ -1,0 +1,28 @@
+import { BASE, check, launch, loginDemo, summary } from "./helpers.mjs";
+const S = process.env.SHOTS;
+const { browser, page, errors } = await launch({ width: 390, height: 780 });
+await loginDemo(page);
+await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: /Chats/ }).click();
+await page.waitForURL(/\/chats$/);
+check("mobile: list pane only", (await page.locator(".chats-main-col").isHidden()) && (await page.locator(".chats-list-col").isVisible()));
+await page.getByRole("link", { name: /Rafi Khan/ }).click();
+await page.waitForURL(/c_u_rafi/);
+await page.locator(".bubble").first().waitFor();
+check("mobile: chat pane only, nav hidden", (await page.locator(".chats-list-col").isHidden()) && (await page.locator(".mobile-nav").isHidden()));
+check("composer visible in viewport", await page.getByLabel("Message", { exact: true }).isVisible());
+const box = await page.getByLabel("Message", { exact: true }).boundingBox();
+check("composer within viewport bottom", box && box.y + box.height <= 780);
+await page.getByLabel("Message", { exact: true }).fill("mobile hi");
+await page.getByRole("button", { name: "Send message" }).click();
+await page.locator(".bubble.out", { hasText: "mobile hi" }).waitFor();
+check("send on mobile", true);
+// long-press menu
+await page.locator(".bubble.out", { hasText: "mobile hi" }).dispatchEvent("touchstart", { touches: [{ clientX: 200, clientY: 400, identifier: 1, target: null }] }).catch(() => {});
+await page.waitForTimeout(700);
+if (S) await page.screenshot({ path: `${S}/mobile-chat.png` });
+await page.getByRole("link", { name: "Back to chats" }).click();
+await page.waitForURL(/\/chats$/);
+check("back returns to list", await page.locator(".chats-list-col").isVisible());
+check("no console/page errors", errors.length === 0, JSON.stringify(errors));
+await browser.close();
+summary();

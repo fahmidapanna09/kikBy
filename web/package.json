@@ -1,0 +1,31 @@
+{
+  "name": "kikbite-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "KikBite production frontend — React + TypeScript, bundled with esbuild.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "build:watch": "node scripts/build.mjs --watch",
+    "serve": "node scripts/serve.mjs",
+    "test": "bash tests/run-all.sh",
+    "app:init": "npm run build && npx cap add android && node scripts/android-setup.mjs patch",
+    "app:sync": "node scripts/android-setup.mjs sync",
+    "app:open": "npx cap open android",
+    "app:apk": "cd android && gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/core": "^7.6.9",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.6.9",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}
