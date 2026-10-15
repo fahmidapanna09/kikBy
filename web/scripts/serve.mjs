@@ -1,5 +1,7 @@
 // Dependency-free static server for dist/ with SPA fallback.
 import { createServer, request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { connect as tlsConnect } from "node:tls";
 import { connect } from "node:net";
 import { readFile, stat } from "node:fs/promises";
 import { dirname, extname, join, normalize } from "node:path";
@@ -18,6 +20,8 @@ const types = {
 // Optional dev proxy: API_PROXY=http://localhost:8080 forwards /api/* to the Go API (stripping "/api"),
 // so the browser sees one origin and no CORS setup is needed locally.
 const apiProxy = process.env.API_PROXY ? new URL(process.env.API_PROXY) : null;
+const upTls = apiProxy?.protocol === "https:"; // API_PROXY may be https:// (e.g. the API's public Railway address) or http:// (private network / local)
+const upPort = apiProxy ? Number(apiProxy.port) || (upTls ? 443 : 80) : 0;
 
 /* ───────── production hardening ─────────
  * - Security headers always. A strict CSP when NODE_ENV=production or CSP=1 (off in plain local dev so tooling keeps working).
@@ -72,7 +76,7 @@ const server = createServer(async (req, res) => {
   if (req.url === "/healthz") { res.writeHead(200, { "Content-Type": "text/plain" }).end("ok"); return; }
   if (req.url.split("?")[0] === "/config.js") return reply(req, res, 200, "text/javascript; charset=utf-8", Buffer.from(runtimeConfig()));
   if (apiProxy && req.url.startsWith("/api/")) {
-    const up = httpRequest({ hostname: apiProxy.hostname, port: apiProxy.port, method: req.method, path: req.url.slice(4), headers: { ...req.headers, host: apiProxy.host } }, (r) => {
+    const up = (upTls ? httpsRequest : httpRequest)({ hostname: apiProxy.hostname, port: upPort, method: req.method, path: req.url.slice(4), headers: { ...req.headers, host: apiProxy.host } }, (r) => {
       res.writeHead(r.statusCode, r.headers);
       r.pipe(res);
     });
@@ -98,7 +102,7 @@ const server = createServer(async (req, res) => {
 if (apiProxy) {
   server.on("upgrade", (req, socket, head) => {
     if (!req.url.startsWith("/ws")) return socket.destroy();
-    const up = connect(Number(apiProxy.port) || 80, apiProxy.hostname, () => {
+    const onUp = () => {
       const lines = [`${req.method} ${req.url} HTTP/1.1`];
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
         const k = req.rawHeaders[i];
@@ -107,7 +111,8 @@ if (apiProxy) {
       up.write(lines.join("\r\n") + "\r\n\r\n");
       if (head?.length) up.write(head);
       socket.pipe(up).pipe(socket);
-    });
+    };
+    const up = upTls ? tlsConnect({ host: apiProxy.hostname, port: upPort, servername: apiProxy.hostname }, onUp) : connect(upPort, apiProxy.hostname, onUp);
     up.on("error", () => socket.destroy());
     socket.on("error", () => up.destroy());
   });
