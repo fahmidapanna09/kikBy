@@ -2,13 +2,14 @@ import type { AppNotification, Conversation, Friend, ID, User } from "@/types/mo
 import { services } from "@/services";
 import { errorMessage } from "@/services/errors";
 import { store } from "./store";
+import { withLivePresence } from "./presenceMemo";
 
 /** Imperative state transitions. UI calls these; they call services; they write the store. */
 
 export function cacheUsers(users: User[]) {
   store.set((s) => {
     const next = { ...s.users };
-    for (const u of users) next[u.id] = { ...next[u.id], ...u };
+    for (const u of users) next[u.id] = withLivePresence({ ...next[u.id], ...u });
     return { users: next };
   });
 }
@@ -23,8 +24,8 @@ export async function loadConversations(opts: { silent?: boolean } = {}) {
   }
 }
 
-export async function loadFriends() {
-  store.set({ friendsStatus: "loading", friendsError: undefined });
+export async function loadFriends(opts: { silent?: boolean } = {}) {
+  if (!opts.silent) store.set({ friendsStatus: "loading", friendsError: undefined });
   try {
     const list = await services.friends.list();
     cacheUsers(list.map((f) => f.user));
