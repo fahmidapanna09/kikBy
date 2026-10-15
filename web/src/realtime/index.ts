@@ -1,7 +1,8 @@
 import { ensureUsers } from "@/api/chatService";
 import { config } from "@/services/config";
 import { session } from "@/services/session";
-import { loadConversations } from "@/state/actions";
+import { loadConversations, loadFriends } from "@/state/actions";
+import { clearPresence } from "@/state/presenceMemo";
 import { store } from "@/state/store";
 import type { ClientEvent, SocketClient } from "./events";
 import { handleServerEvent } from "./handlers";
@@ -29,11 +30,27 @@ export function startRealtime() {
     socket.onState((s) => {
       store.set({ connection: s });
       // After a reconnect, anything missed while offline is re-synced from REST.
-      if (s === "open" && wasOpen) void loadConversations({ silent: true });
-      if (s === "open") wasOpen = true;
+      if (s === "open") {
+        clearPresence(); // the server re-announces everyone who is online on each new connection
+        const me = session.get()?.user.id;
+        store.set((st) => ({ users: Object.fromEntries(Object.entries(st.users).map(([id, u]) => [id, id === me || u.presence === "offline" ? u : { ...u, presence: "offline" as const }])) }));
+        if (wasOpen) {
+          void loadConversations({ silent: true });
+          void loadFriends({ silent: true });
+        }
+        wasOpen = true;
+      }
     }),
   ];
   socket.connect();
+  if (live || config.liveAuth) {
+    // Coming back to the app (phone unlocked, tab re-focused): pick up friend changes made while it was in the background.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadFriends({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    offs.push(() => document.removeEventListener("visibilitychange", onVisible));
+  }
 }
 
 export function stopRealtime() {
