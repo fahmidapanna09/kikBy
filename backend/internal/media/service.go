@@ -337,3 +337,17 @@ func SanitizeFileName(name string) string {
 	}
 	return out
 }
+
+// PresignAvatar returns a short-lived download link for a profile picture. There is deliberately no per-viewer access
+// check (profile pictures are visible to everyone, like in any chat app), so callers must pass a media id they read from
+// users.avatar_media_id, never one supplied by a client. Only finished image uploads qualify.
+func (s *Service) PresignAvatar(ctx context.Context, mediaID string) (string, error) {
+	m, err := s.repo.GetByID(ctx, mediaID)
+	if err != nil {
+		return "", err
+	}
+	if m.Status != StatusUploaded || m.Kind != KindImage {
+		return "", ErrNotUploadedYet
+	}
+	return s.s3.PresignDownload(ctx, m.ObjectKey)
+}
