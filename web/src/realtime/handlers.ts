@@ -1,7 +1,7 @@
 import { handleCallEvent } from "@/calls/callClient";
 import { navigate } from "@/lib/router";
 import { session } from "@/services/session";
-import { addNotification, loadConversations, removeConversation } from "@/state/actions";
+import { addNotification, loadConversations, loadFriends, removeConversation } from "@/state/actions";
 import { store } from "@/state/store";
 import { applyMessageDelete, applyMessageUpdate, applyReactions, applyStatus, receiveMessage, setPresence, setTyping } from "@/state/messages";
 import type { ServerEvent } from "./events";
@@ -54,6 +54,8 @@ export function handleServerEvent(e: ServerEvent): void {
       break;
     case "notification:new":
       addNotification(e.notification);
+      // Somebody sent / accepted a friend request: refresh the friends list so the new status shows immediately.
+      if (e.notification.kind === "friend_request" || e.notification.kind === "friend_accept") void loadFriends({ silent: true });
       break;
     case "conversations:refresh":
       void loadConversations({ silent: true });
