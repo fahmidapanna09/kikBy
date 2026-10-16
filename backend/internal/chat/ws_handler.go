@@ -152,6 +152,7 @@ func (h *WSHandler) broadcastPresence(ctx context.Context, userID string, online
 		h.log.Warn("presence: peer lookup failed", zap.Error(err))
 		return
 	}
+	h.log.Info("presence: broadcast", zap.String("user", userID), zap.Bool("online", online), zap.Int("peers", len(peers)))
 	payload := PresencePayload{UserID: userID, Online: online}
 	if !online {
 		now := time.Now().UTC()
@@ -173,6 +174,7 @@ func (h *WSHandler) sendPresenceSnapshot(ctx context.Context, c *conn) {
 		h.log.Warn("presence: snapshot lookup failed", zap.Error(err))
 		return
 	}
+	sent := 0
 	for _, peer := range peers {
 		online, err := h.presence.IsOnline(ctx, peer)
 		if err != nil || !online {
@@ -181,9 +183,11 @@ func (h *WSHandler) sendPresenceSnapshot(ctx context.Context, c *conn) {
 		env := NewEnvelope(EventPresenceUpdate, "", c.deviceID, PresencePayload{UserID: peer, Online: true})
 		select {
 		case c.send <- env:
+			sent++
 		default:
 		}
 	}
+	h.log.Info("presence: snapshot", zap.String("user", c.userID), zap.Int("peers", len(peers)), zap.Int("online_sent", sent))
 }
 
 func (h *WSHandler) readPump(ctx context.Context, c *conn) {
