@@ -1,9 +1,11 @@
 import { handleCallEvent } from "@/calls/callClient";
 import { navigate } from "@/lib/router";
+import { notify } from "@/lib/nativeNotify";
 import { session } from "@/services/session";
 import { addNotification, loadConversations, loadFriends, removeConversation } from "@/state/actions";
 import { store } from "@/state/store";
 import { applyMessageDelete, applyMessageUpdate, applyReactions, applyStatus, receiveMessage, setPresence, setTyping } from "@/state/messages";
+import type { Message } from "@/types/models";
 import type { ServerEvent } from "./events";
 
 /**
@@ -11,12 +13,26 @@ import type { ServerEvent } from "./events";
  * This file is the ONLY place that maps wire events to state transitions; sockets never touch the store
  * and components never touch sockets.
  */
+/** System notification for a message from someone else, unless that chat is open on screen right now. */
+function notifyMessage(m: Message): void {
+  const st = store.get();
+  if (m.senderId === session.get()?.user.id) return;
+  if (st.activeConvId === m.conversationId && document.visibilityState === "visible") return;
+  const conv = st.conversations.find((c) => c.id === m.conversationId);
+  if (conv?.muted) return;
+  const sender = st.users[m.senderId]?.displayName ?? "New message";
+  const title = conv && conv.kind === "group" ? `${sender} · ${conv.title ?? "Group"}` : sender;
+  const text = m.text || (m.attachments[0] ? "Sent an attachment" : "New message");
+  void notify(title, text, `/chats/${m.conversationId}`);
+}
+
 const typingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function handleServerEvent(e: ServerEvent): void {
   switch (e.type) {
     case "message:new":
       receiveMessage(e.message);
+      notifyMessage(e.message);
       setTyping(e.message.conversationId, e.message.senderId, false);
       break;
     case "message:update":
@@ -54,6 +70,7 @@ export function handleServerEvent(e: ServerEvent): void {
       break;
     case "notification:new":
       addNotification(e.notification);
+      if (e.notification.kind === "friend_request" || e.notification.kind === "friend_accept") void notify(e.notification.title || "KikBite", e.notification.body, "/friends");
       // Somebody sent / accepted a friend request: refresh the friends list so the new status shows immediately.
       if (e.notification.kind === "friend_request" || e.notification.kind === "friend_accept") void loadFriends({ silent: true });
       break;
@@ -62,6 +79,9 @@ export function handleServerEvent(e: ServerEvent): void {
       window.dispatchEvent(new CustomEvent("kikbite:group-changed"));
       break;
     case "call:incoming":
+      void notify("Incoming call", `${store.get().users[e.fromUserId]?.displayName ?? "Someone"} is calling you`, "/chats");
+      handleCallEvent(e);
+      break;
     case "call:joined":
     case "call:participant_joined":
     case "call:participant_left":
