@@ -32,11 +32,13 @@ export function patchManifest(xml) {
   need("uses-permission", "android.permission.RECORD_AUDIO", '<uses-permission android:name="android.permission.RECORD_AUDIO" />');
   need("uses-permission", "android.permission.MODIFY_AUDIO_SETTINGS", '<uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />');
   need("uses-permission", "android.permission.ACCESS_NETWORK_STATE", '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />');
+  need("uses-permission", "android.permission.POST_NOTIFICATIONS", '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />');
+  need("uses-permission", "android.permission.VIBRATE", '<uses-permission android:name="android.permission.VIBRATE" />');
   need("uses-feature", "android.hardware.camera", '<uses-feature android:name="android.hardware.camera" android:required="false" />');
   need("uses-feature", "android.hardware.microphone", '<uses-feature android:name="android.hardware.microphone" android:required="false" />');
   if (!lines.length) return xml;
   if (!xml.includes("</manifest>")) throw new Error("AndroidManifest.xml has no </manifest> tag");
-  return xml.replace("</manifest>", `\n    <!-- KikBite: voice/video calls -->\n${lines.join("\n")}\n</manifest>`);
+  return xml.replace("</manifest>", `\n    <!-- KikBite: calls + notifications -->\n${lines.join("\n")}\n</manifest>`);
 }
 
 function copyDir(src, dst) {
@@ -55,7 +57,7 @@ function patchAll() {
   const after = patchManifest(before);
   if (after !== before) {
     writeFileSync(manifestPath, after);
-    console.log("✔ AndroidManifest.xml: camera / microphone permissions added");
+    console.log("✔ AndroidManifest.xml: camera / microphone / notification permissions added");
   } else {
     console.log("✔ AndroidManifest.xml: permissions already present");
   }
