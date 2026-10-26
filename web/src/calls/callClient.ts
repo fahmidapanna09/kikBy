@@ -87,17 +87,58 @@ function mediaError(e: unknown): string {
 
 async function acquireMedia(kind: CallKind): Promise<{ stream: MediaStream; hasVideo: boolean }> {
   if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error("insecure"), { name: "SecurityError" });
-  const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  // Voice-first capture: echo cancellation + noise suppression (the "ENC" part: the other side stops hearing your room)
+  // + gain control, mono 48 kHz (what Opus wants). Everything is "ideal", so a device that lacks one of them still works.
+  // voiceIsolation is the newer, stronger on-device noise filter; browsers that don't know it ignore it.
+  const audio = {
+    echoCancellation: { ideal: true },
+    noiseSuppression: { ideal: true },
+    autoGainControl: { ideal: true },
+    channelCount: { ideal: 1 },
+    sampleRate: { ideal: 48000 },
+    voiceIsolation: { ideal: true },
+  } as MediaTrackConstraints;
   if (kind === "video") {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio, video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } } });
+      tuneMic(stream);
       return { stream, hasVideo: true };
     } catch (e) {
       if ((e as { name?: string }).name === "NotAllowedError") throw e;
       toast.info("Camera unavailable — joining with audio only.");
     }
   }
-  return { stream: await navigator.mediaDevices.getUserMedia({ audio }), hasVideo: false };
+  const stream = await navigator.mediaDevices.getUserMedia({ audio });
+  tuneMic(stream);
+  return { stream, hasVideo: false };
+}
+
+/** Tell the encoder this track is speech (Opus switches to its voice mode: clearer words, less music-style smearing). */
+function tuneMic(stream: MediaStream) {
+  for (const t of stream.getAudioTracks()) {
+    try {
+      (t as MediaStreamTrack & { contentHint: string }).contentHint = "speech";
+    } catch {
+      /* not supported */
+    }
+  }
+}
+
+/** Voice bitrate + priority: 40 kbps mono Opus is "wideband clear" and still survives weak mobile data. */
+function tuneAudioSenders(pc: RTCPeerConnection) {
+  for (const s of pc.getSenders()) {
+    if (s.track?.kind !== "audio") continue;
+    try {
+      const p = s.getParameters();
+      if (!p.encodings || p.encodings.length === 0) p.encodings = [{}];
+      p.encodings[0].maxBitrate = 40000;
+      (p.encodings[0] as RTCRtpEncodingParameters & { networkPriority?: string }).networkPriority = "high";
+      p.encodings[0].priority = "high";
+      void s.setParameters(p).catch(() => {});
+    } catch {
+      /* best-effort */
+    }
+  }
 }
 
 /* ───────── starting / answering ───────── */
@@ -266,6 +307,7 @@ function makePeer(userId: ID): Peer {
     const st = pc.connectionState;
     if (st === "connected") {
       patchPeer(userId, { state: "connected" });
+      tuneAudioSenders(pc);
       markConnected();
     } else if (st === "failed") {
       patchPeer(userId, { state: "failed" });
