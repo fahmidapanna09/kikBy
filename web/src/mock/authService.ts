@@ -7,10 +7,10 @@ import { uid } from "@/lib/utils";
 import { delay } from "./util";
 import { loadAccounts, mockHash, resetDb, saveAccounts } from "./db";
 
-const resetTokens = new Map<string, string>(); // token -> account email
-let lastResetLink = "";
-/** Mock mode only: lets the UI show the "email" link since no email is really sent. */
-export const mockLastResetLink = () => lastResetLink;
+const resetCodes = new Map<string, string>(); // account email -> 6-digit code
+let lastResetCode = "";
+/** Mock mode only: lets the UI show the "email" code since no email is really sent. */
+export const mockLastResetCode = () => lastResetCode;
 
 function makeSession(user: User, remember: boolean): AuthSession {
   return {
@@ -56,20 +56,22 @@ export const authService: AuthService = {
     // Always resolves — never reveal whether the address has an account.
     const acc = loadAccounts().find((a) => a.user.email?.toLowerCase() === email.trim().toLowerCase());
     if (acc) {
-      const token = uid("rst");
-      resetTokens.set(token, acc.user.email as string);
-      lastResetLink = `/reset-password?token=${token}`;
-      console.info("[mock] password reset link:", lastResetLink);
-    } else lastResetLink = "";
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      resetCodes.set(String(acc.user.email).toLowerCase(), code);
+      lastResetCode = code;
+      console.info("[mock] password reset code:", code);
+    } else lastResetCode = "";
   },
 
-  async resetPassword({ token, password }) {
+  async resetPassword({ email, code, password }) {
     await delay(500, 800);
-    const email = resetTokens.get(token);
-    if (!email) throw new ServiceError("invalid_token", "This reset link is invalid or has expired. Request a new one.", { status: 400 });
+    const key = email.trim().toLowerCase();
+    if (!/^\d{6}$/.test(code.replace(/[\s-]/g, "")) || resetCodes.get(key) !== code.replace(/[\s-]/g, "")) {
+      throw new ServiceError("invalid_code", "That code is wrong or has expired.", { status: 400 });
+    }
     const accounts = loadAccounts();
-    saveAccounts(accounts.map((a) => (a.user.email === email ? { ...a, pwHash: mockHash(password) } : a)));
-    resetTokens.delete(token);
+    saveAccounts(accounts.map((a) => (a.user.email?.toLowerCase() === key ? { ...a, pwHash: mockHash(password) } : a)));
+    resetCodes.delete(key);
   },
 
   async verifyEmail(code) {
