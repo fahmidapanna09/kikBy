@@ -92,8 +92,8 @@ export const liveAuthService: AuthService = {
   async forgotPassword(email) {
     await http("/auth/forgot-password", { method: "POST", auth: false, body: { email } });
   },
-  async resetPassword({ token, password }) {
-    await http("/auth/reset-password", { method: "POST", auth: false, body: { token, password } });
+  async resetPassword({ email, code, password }) {
+    await http("/auth/reset-password", { method: "POST", auth: false, body: { email, code, password } });
   },
   async verifyEmail(code) {
     await http("/auth/verify-email", { method: "POST", auth: true, body: { code } });
