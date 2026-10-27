@@ -7,18 +7,18 @@ import (
 	"go.uber.org/zap"
 )
 
-// Mailer abstracts outbound e-mail: a password-reset link and a 6-digit e-mail-verification code.
+// Mailer abstracts outbound e-mail: 6-digit codes for password reset and e-mail verification.
 type Mailer interface {
-	SendPasswordReset(ctx context.Context, toEmail, resetURL string) error
+	SendPasswordReset(ctx context.Context, toEmail, code string) error
 	SendEmailVerification(ctx context.Context, toEmail, code string) error
 }
 
-// ConsoleMailer logs the reset link / verification code instead of sending it. LOCAL DEV ONLY:
+// ConsoleMailer logs the reset / verification code instead of sending it. LOCAL DEV ONLY:
 // both are credentials, so they must never be logged outside APP_ENV=local.
 type ConsoleMailer struct{ Log *zap.Logger }
 
-func (m ConsoleMailer) SendPasswordReset(_ context.Context, toEmail, resetURL string) error {
-	m.Log.Info("password reset e-mail (console mailer, local dev only)", zap.String("to", toEmail), zap.String("url", resetURL))
+func (m ConsoleMailer) SendPasswordReset(_ context.Context, toEmail, code string) error {
+	m.Log.Info("password reset e-mail (console mailer, local dev only)", zap.String("to", toEmail), zap.String("code", code))
 	return nil
 }
 

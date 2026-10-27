@@ -125,8 +125,10 @@ func (h *Handler) resetPassword(w http.ResponseWriter, r *http.Request) {
 		response.JSON(w, http.StatusOK, map[string]string{"status": "password_updated"})
 	case errors.As(err, &ve):
 		h.validationResponse(w, r, ve)
+	case errors.Is(err, ErrTooManyCodeAttempts):
+		response.Error(w, http.StatusTooManyRequests, "too_many_attempts", "Too many wrong codes. Request a new code and try again.", requestID(r))
 	case errors.Is(err, ErrInvalidResetToken):
-		response.Error(w, http.StatusBadRequest, "invalid_token", "this reset link is invalid or has expired", requestID(r))
+		response.Error(w, http.StatusBadRequest, "invalid_code", "That code is wrong or has expired.", requestID(r))
 	default:
 		h.log.Error("reset password failed", zap.Error(err), zap.String("request_id", requestID(r)))
 		response.Error(w, http.StatusInternalServerError, "internal_error", "failed to reset password", requestID(r))

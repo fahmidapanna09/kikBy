@@ -39,20 +39,22 @@ type resendRequest struct {
 	Text    string   `json:"text"`
 }
 
-func (m *ResendMailer) SendPasswordReset(ctx context.Context, toEmail, resetURL string) error {
-	return m.send(ctx, "reset", toEmail, "Reset your KikBite password",
-		"We got a request to reset your KikBite password.\n\nChoose a new one here (valid for 30 minutes):\n"+resetURL+"\n\nIf this wasn't you, ignore this e-mail — your password stays the same.\n",
+func (m *ResendMailer) SendPasswordReset(ctx context.Context, toEmail, code string) error {
+	minutes := fmt.Sprintf("%d minutes", int(verifyCodeTTL.Minutes()))
+	// Same idempotency reasoning as SendEmailVerification: the time makes every genuine request a distinct mail.
+	nonce := code + "|" + time.Now().UTC().Format(time.RFC3339Nano)
+	return m.send(ctx, "reset", toEmail, "Your KikBite password reset code",
+		"Your KikBite password reset code is "+code+".\n\nIt expires in "+minutes+". Never share this code with anyone — KikBite will never ask you for it.\n\nIf you didn't ask to reset your password, ignore this e-mail — your password stays the same.\n",
 		renderEmail(emailSpec{
-			Preheader: "Use this link to choose a new password. It expires in 30 minutes.",
+			Preheader: "Your reset code is " + code + ". It expires in " + minutes + ".",
 			Title:     "Reset your password",
-			Intro:     "We got a request to reset the password for your KikBite account. Click the button below to choose a new one.",
-			Button:    "Choose a new password",
-			Link:      resetURL,
-			Expiry:    "This link expires in 30 minutes and can be used once.",
-			Tip:       "KikBite will never ask for your password by e-mail, chat or phone.",
+			Intro:     "Enter this code in KikBite to choose a new password.",
+			Code:      code,
+			Expiry:    "This code expires in " + minutes + " and works once.",
+			Tip:       "Never share this code. KikBite will never ask you for it by chat, phone or e-mail.",
 			Footer:    "If you didn't ask for this, you can safely ignore this e-mail — your password stays the same.",
 			ToEmail:   toEmail,
-		}), resetURL)
+		}), nonce)
 }
 
 func (m *ResendMailer) SendEmailVerification(ctx context.Context, toEmail, code string) error {

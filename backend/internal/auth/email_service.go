@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/url"
 	"time"
 
 	"go.uber.org/zap"
@@ -170,37 +169,56 @@ func (s *Service) ForgotPassword(ctx context.Context, rawEmail, ip string) error
 	if err != nil {
 		return fmt.Errorf("forgot password: %w", err)
 	}
-	raw, hash, err := newResetToken()
+	// 60 s between codes per account: this endpoint must not be usable to flood somebody's inbox.
+	if last, ok, err := s.repo.LastResetSentAt(ctx, userID); err != nil {
+		return fmt.Errorf("forgot password: %w", err)
+	} else if ok && time.Since(last) < verifyResendCooldown {
+		return nil
+	}
+	code, err := newVerifyCode()
 	if err != nil {
 		return err
 	}
-	if err := s.repo.CreateResetToken(ctx, userID, hash, time.Now().Add(resetTokenTTL)); err != nil {
-		return fmt.Errorf("forgot password: store token: %w", err)
+	hash, err := hashOTPCode(code)
+	if err != nil {
+		return err
 	}
-	link := s.email.ResetBaseURL + "/reset-password?token=" + url.QueryEscape(raw)
+	if err := s.repo.CreateResetToken(ctx, userID, hash, time.Now().Add(verifyCodeTTL)); err != nil {
+		return fmt.Errorf("forgot password: store code: %w", err)
+	}
 	mailer := s.email.Mailer
 	if mailer == nil {
 		mailer = NoopMailer{}
 	}
-	if err := mailer.SendPasswordReset(ctx, email, link); err != nil {
+	if err := mailer.SendPasswordReset(ctx, email, code); err != nil {
 		return fmt.Errorf("forgot password: send mail: %w", err)
 	}
 	s.audit.Log(ctx, audit.EventPasswordResetRequested, userID, ip, "", nil)
 	return nil
 }
 
+// ResetPassword checks the e-mailed 6-digit code for the account with that e-mail and sets the new password.
+// The password is validated FIRST, so a too-weak password does not burn a code attempt.
 func (s *Service) ResetPassword(ctx context.Context, req ResetPasswordRequest, ip string) error {
 	if e := validatePassword(req.Password); e != "" {
 		return &ValidationError{Fields: FieldErrors{"password": e}}
 	}
-	if req.Token == "" {
+	email := normalizeEmail(req.Email)
+	code := normalizeVerifyCode(req.Code)
+	if email == "" || code == "" {
 		return ErrInvalidResetToken
 	}
-	userID, err := s.repo.ConsumeResetToken(ctx, hashResetToken(req.Token))
+	userID, err := s.repo.GetUserIDByEmail(ctx, email)
 	if errors.Is(err, ErrNotFound) {
 		return ErrInvalidResetToken
 	}
 	if err != nil {
+		return fmt.Errorf("reset password: %w", err)
+	}
+	if err := s.repo.consumeResetCode(ctx, userID, code); err != nil {
+		if errors.Is(err, ErrInvalidResetToken) || errors.Is(err, ErrTooManyCodeAttempts) {
+			return err
+		}
 		return fmt.Errorf("reset password: %w", err)
 	}
 	hash, err := hashPassword(req.Password)

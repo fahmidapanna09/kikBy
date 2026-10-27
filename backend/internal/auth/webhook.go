@@ -132,11 +132,11 @@ func (m SuppressingMailer) check(ctx context.Context, to string) error {
 	return nil // a failed lookup must not block password-reset mail
 }
 
-func (m SuppressingMailer) SendPasswordReset(ctx context.Context, to, url string) error {
+func (m SuppressingMailer) SendPasswordReset(ctx context.Context, to, code string) error {
 	if err := m.check(ctx, to); err != nil {
 		return err
 	}
-	return m.Inner.SendPasswordReset(ctx, to, url)
+	return m.Inner.SendPasswordReset(ctx, to, code)
 }
 
 func (m SuppressingMailer) SendEmailVerification(ctx context.Context, to, code string) error {

@@ -122,3 +122,66 @@ func (r *Repository) SetPasswordAndRevokeSessions(ctx context.Context, userID, p
 	}
 	return tx.Commit(ctx)
 }
+
+// LastResetSentAt is when the newest reset code for the user was created (for the 60 s cooldown).
+func (r *Repository) LastResetSentAt(ctx context.Context, userID string) (time.Time, bool, error) {
+	var t time.Time
+	err := r.pool.QueryRow(ctx, `SELECT created_at FROM password_reset_tokens WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1`, userID).Scan(&t)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	return t, err == nil, err
+}
+
+// consumeResetCode checks `code` against the user's newest open, unexpired reset code in ONE transaction.
+// The row is locked (FOR UPDATE), so concurrent guesses cannot dodge the attempt counter:
+//   - no open code → ErrInvalidResetToken (expired, used, or never requested)
+//   - wrong code   → attempts+1 saved; ErrInvalidResetToken, or ErrTooManyCodeAttempts when it burns the code
+//   - right code   → the code is marked used
+func (r *Repository) consumeResetCode(ctx context.Context, userID, code string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var id, hash string
+	var attempts int
+	err = tx.QueryRow(ctx, `
+		SELECT id, token_hash, attempts
+		FROM password_reset_tokens
+		WHERE user_id = $1 AND used_at IS NULL AND expires_at > now()
+		ORDER BY created_at DESC
+		LIMIT 1
+		FOR UPDATE
+	`, userID).Scan(&id, &hash, &attempts)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrInvalidResetToken
+	}
+	if err != nil {
+		return err
+	}
+	if !verifyOTPCode(hash, code) {
+		attempts++
+		if attempts >= verifyCodeMaxAttempts {
+			if _, err = tx.Exec(ctx, `UPDATE password_reset_tokens SET attempts = $2, used_at = now() WHERE id = $1`, id, attempts); err != nil {
+				return err
+			}
+			if err = tx.Commit(ctx); err != nil {
+				return err
+			}
+			return ErrTooManyCodeAttempts
+		}
+		if _, err = tx.Exec(ctx, `UPDATE password_reset_tokens SET attempts = $2 WHERE id = $1`, id, attempts); err != nil {
+			return err
+		}
+		if err = tx.Commit(ctx); err != nil {
+			return err
+		}
+		return ErrInvalidResetToken
+	}
+	if _, err = tx.Exec(ctx, `UPDATE password_reset_tokens SET used_at = now() WHERE id = $1`, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
