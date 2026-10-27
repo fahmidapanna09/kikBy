@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -15,7 +16,14 @@ import (
 	"github.com/yourorg/chatplatform/internal/platform/middleware"
 )
 
+// offlineGrace is how long a user stays "online" after their last connection drops. Mobile networks and phone sleep
+// make sockets blink off and on all the time; without this, friends would see the green dot flicker.
+const offlineGrace = 45 * time.Second
+
 type WSHandler struct {
+	offMu  sync.Mutex
+	offGen map[string]int // userID -> generation of the newest scheduled "went offline" (a reconnect bumps it = cancels)
+
 	svc      *Service
 	hub      *Hub
 	presence *Presence
@@ -83,6 +91,7 @@ func tokenFromRequest(r *http.Request) string {
 
 func NewWSHandler(svc *Service, hub *Hub, presence *Presence, verifier middleware.TokenVerifier, log *zap.Logger) *WSHandler {
 	h := &WSHandler{
+		offGen:   make(map[string]int),
 		svc:      svc,
 		hub:      hub,
 		presence: presence,
@@ -128,6 +137,7 @@ func (h *WSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.hub.Register(c)
+	h.cancelPendingOffline(userID)
 	ctx := context.Background()
 	_ = h.presence.MarkOnline(ctx, userID)
 	h.broadcastPresence(ctx, userID, true)
@@ -141,8 +151,37 @@ func (h *WSHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	if h.hub.IsUserOnlineLocally(userID) {
 		return // another tab/device of this user is still connected: they are still online
 	}
-	_ = h.presence.MarkOffline(ctx, userID)
-	h.broadcastPresence(ctx, userID, false)
+	h.scheduleOffline(userID)
+}
+
+// cancelPendingOffline stops a delayed "went offline" for the user (they reconnected in time).
+func (h *WSHandler) cancelPendingOffline(userID string) {
+	h.offMu.Lock()
+	h.offGen[userID]++
+	h.offMu.Unlock()
+}
+
+// scheduleOffline marks the user offline after offlineGrace unless they reconnect first.
+func (h *WSHandler) scheduleOffline(userID string) {
+	h.offMu.Lock()
+	h.offGen[userID]++
+	gen := h.offGen[userID]
+	h.offMu.Unlock()
+	go func() {
+		time.Sleep(offlineGrace)
+		h.offMu.Lock()
+		cur := h.offGen[userID]
+		if cur == gen {
+			delete(h.offGen, userID)
+		}
+		h.offMu.Unlock()
+		if cur != gen || h.hub.IsUserOnlineLocally(userID) {
+			return
+		}
+		ctx := context.Background()
+		_ = h.presence.MarkOffline(ctx, userID)
+		h.broadcastPresence(ctx, userID, false)
+	}()
 }
 
 // broadcastPresence tells the user's friends and conversation peers that they went online/offline.
@@ -178,7 +217,17 @@ func (h *WSHandler) sendPresenceSnapshot(ctx context.Context, c *conn) {
 	sent := 0
 	for _, peer := range peers {
 		online, err := h.presence.IsOnline(ctx, peer)
-		if err != nil || !online {
+		if err != nil {
+			continue
+		}
+		if !online {
+			// Not online now: still tell the client WHEN they were last active ("active 5 min ago").
+			if ls, err := h.presence.LastSeen(ctx, peer); err == nil && ls != nil {
+				select {
+				case c.send <- NewEnvelope(EventPresenceUpdate, "", c.deviceID, PresencePayload{UserID: peer, Online: false, LastSeen: ls}):
+				default:
+				}
+			}
 			continue
 		}
 		env := NewEnvelope(EventPresenceUpdate, "", c.deviceID, PresencePayload{UserID: peer, Online: true})
