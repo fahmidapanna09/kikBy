@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -152,7 +153,7 @@ func (h *WSHandler) broadcastPresence(ctx context.Context, userID string, online
 		h.log.Warn("presence: peer lookup failed", zap.Error(err))
 		return
 	}
-	h.log.Info("presence: broadcast", zap.String("user", userID), zap.Bool("online", online), zap.Int("peers", len(peers)))
+	h.log.Info(fmt.Sprintf("presence: broadcast user=%s online=%t peers=%d", userID, online, len(peers)))
 	payload := PresencePayload{UserID: userID, Online: online}
 	if !online {
 		now := time.Now().UTC()
@@ -187,7 +188,7 @@ func (h *WSHandler) sendPresenceSnapshot(ctx context.Context, c *conn) {
 		default:
 		}
 	}
-	h.log.Info("presence: snapshot", zap.String("user", c.userID), zap.Int("peers", len(peers)), zap.Int("online_sent", sent))
+	h.log.Info(fmt.Sprintf("presence: snapshot user=%s peers=%d online_sent=%d", c.userID, len(peers), sent))
 }
 
 func (h *WSHandler) readPump(ctx context.Context, c *conn) {
