@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { services } from "@/services";
 import { Icon } from "@/icons/Icon";
 import { cn, formatBytes, formatTime, linkify, safeUrl } from "@/lib/utils";
@@ -169,22 +170,26 @@ function AttachmentView({ a }: { a: Attachment }) {
     };
   }, [a.id, a.url, a.kind]);
   const href = safeUrl(url);
-  const openFull = (e: any) => {
-    if (!isThumb) return; // already the full file → normal link behaviour
-    e.preventDefault();
-    const w = window.open("", "_blank");
-    if (w) w.opener = null;
-    services.uploads.resolveUrl?.(a.id).then((u) => (w ? (w.location.href = u) : window.location.assign(u)), () => w?.close());
-  };
+  const [viewing, setViewing] = useState(false);
   if (a.kind === "image" && href && !failed) {
     return (
-      <a className="att-img" href={href} target="_blank" rel="noopener noreferrer" onClick={openFull}>
-        <img src={href} alt={a.name} loading="lazy" decoding="async" data-thumb={isThumb || undefined} onError={() => setFailed(true)} />
-      </a>
+      <>
+        <button type="button" className="att-img" onClick={() => setViewing(true)} aria-label={`Open photo ${a.name}`}>
+          <img src={href} alt={a.name} loading="lazy" decoding="async" data-thumb={isThumb || undefined} onError={() => setFailed(true)} />
+        </button>
+        {viewing && <MediaViewer a={a} startUrl={href} thumb={isThumb} onClose={() => setViewing(false)} />}
+      </>
     );
   }
   if (a.kind === "video" && href && !failed) {
-    return <video className="att-video" src={href} controls preload="metadata" playsInline aria-label={a.name} onError={() => setFailed(true)} />;
+    // Plays right inside the chat (tap for the player controls); the expand button opens it big, still inside the app.
+    return (
+      <div className="att-videowrap">
+        <video className="att-video" src={href} controls preload="metadata" playsInline controlsList="nodownload" aria-label={a.name} onError={() => setFailed(true)} />
+        <button type="button" className="att-expand" onClick={() => setViewing(true)} aria-label="Open video full screen"><Icon name="eye" size={16} /></button>
+        {viewing && <MediaViewer a={a} startUrl={href} thumb={false} onClose={() => setViewing(false)} />}
+      </div>
+    );
   }
   if (a.kind === "audio" && href && !failed) {
     return (
@@ -199,5 +204,74 @@ function AttachmentView({ a }: { a: Attachment }) {
       <Icon name="doc" size={20} />
       <span className="att-meta"><b className="truncate">{a.name}</b><span>{failed ? "Unavailable" : formatBytes(a.sizeBytes)}</span></span>
     </a>
+  );
+}
+
+/**
+ * Full-screen photo / video viewer that lives INSIDE the app (like WhatsApp / Messenger): no new tab, no public link
+ * opened in a browser. Back button / Esc / the X close it. Photos start from the small preview and swap to the full file.
+ */
+function MediaViewer({ a, startUrl, thumb, onClose }: { a: Attachment; startUrl: string; thumb: boolean; onClose: () => void }) {
+  const [src, setSrc] = useState(startUrl);
+  const [bad, setBad] = useState(false);
+  useEffect(() => {
+    if (!thumb) return;
+    let live = true;
+    services.uploads.resolveUrl?.(a.id).then((u) => live && setSrc(u), () => {});
+    return () => {
+      live = false;
+    };
+  }, [a.id, thumb]);
+  useEffect(() => {
+    // The phone's Back button should close the viewer, not leave the chat.
+    let closedByBack = false;
+    try {
+      history.pushState({ kbViewer: 1 }, "");
+    } catch {
+      /* ignore */
+    }
+    const onPop = () => {
+      closedByBack = true;
+      onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("popstate", onPop);
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+      if (!closedByBack && (history.state as { kbViewer?: number } | null)?.kbViewer) {
+        try {
+          history.back();
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return createPortal(
+    <div className="media-viewer" role="dialog" aria-modal="true" aria-label={a.name} onClick={onClose}>
+      <div className="mv-bar" onClick={(e: { stopPropagation(): void }) => e.stopPropagation()}>
+        <button type="button" className="mv-btn" onClick={onClose} aria-label="Close"><Icon name="close" size={22} /></button>
+        <span className="mv-title truncate">{a.name}</span>
+        <a className="mv-btn" href={src} download={a.name} aria-label="Save" onClick={(e: { stopPropagation(): void }) => e.stopPropagation()}><Icon name="download" size={20} /></a>
+      </div>
+      <div className="mv-stage" onClick={(e: { stopPropagation(): void }) => e.stopPropagation()}>
+        {bad ? (
+          <p className="mv-error">This file could not be loaded.</p>
+        ) : a.kind === "video" ? (
+          <video src={src} controls autoPlay playsInline onError={() => setBad(true)} />
+        ) : (
+          <img src={src} alt={a.name} onError={() => setBad(true)} />
+        )}
+      </div>
+    </div>,
+    document.body,
   );
 }
