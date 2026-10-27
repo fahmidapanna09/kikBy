@@ -112,3 +112,7 @@ declare module "react/jsx-runtime" {
     interface IntrinsicElements { [tag: string]: any }
   }
 }
+
+declare module "react-dom" {
+  export function createPortal(children: unknown, container: Element | DocumentFragment): unknown;
+}
