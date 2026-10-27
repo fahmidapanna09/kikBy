@@ -1,27 +1,37 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/common/Button";
 import { Input } from "@/components/common/Input";
 import { Icon } from "@/icons/Icon";
 import { Link, navigate, useLocation } from "@/lib/router";
 import { passwordStrength, validateConfirm, validatePassword } from "@/lib/validation";
-import { errorMessage, services } from "@/services";
+import { config } from "@/services/config";
+import { errorMessage, mockLastResetCode, services } from "@/services";
+import { toast } from "@/components/common/Toast";
 import { AuthLayout } from "./AuthLayout";
 
 export default function ResetPasswordPage() {
   const { query } = useLocation();
-  const token = query.get("token") ?? "";
+  const email = (query.get("email") ?? "").trim();
+  const [code, setCode] = useState("");
+  const [cooldown, setCooldown] = useState(60);
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [errors, setErrors] = useState<{ pw?: string; confirm?: string }>({});
+  const [errors, setErrors] = useState<{ code?: string; pw?: string; confirm?: string }>({});
   const [formError, setFormError] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const strength = passwordStrength(pw);
 
-  if (!token) {
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  if (!email) {
     return (
-      <AuthLayout title="Link not valid" subtitle="This password reset link is missing its token. Request a new one.">
-        <Button block onClick={() => navigate("/forgot-password")}>Request a new link</Button>
+      <AuthLayout title="Reset your password" subtitle="Tell us your email first and we'll send you a 6-digit code.">
+        <Button block onClick={() => navigate("/forgot-password")}>Send me a code</Button>
       </AuthLayout>
     );
   }
@@ -37,12 +47,13 @@ export default function ResetPasswordPage() {
   const submit = async (ev: { preventDefault(): void }) => {
     ev.preventDefault();
     setFormError("");
-    const e = { pw: validatePassword(pw), confirm: validateConfirm(pw, confirm) };
+    const digits = code.replace(/[\s-]/g, "");
+    const e = { code: /^\d{6}$/.test(digits) ? "" : "Enter the 6-digit code from your email", pw: validatePassword(pw), confirm: validateConfirm(pw, confirm) };
     setErrors(e);
-    if (e.pw || e.confirm) return;
+    if (e.code || e.pw || e.confirm) return;
     setLoading(true);
     try {
-      await services.auth.resetPassword({ token, password: pw });
+      await services.auth.resetPassword({ email, code: digits, password: pw });
       setDone(true);
     } catch (err) {
       setFormError(errorMessage(err));
@@ -51,16 +62,30 @@ export default function ResetPasswordPage() {
     }
   };
 
+  const resend = async () => {
+    if (cooldown > 0) return;
+    setCooldown(60);
+    try {
+      await services.auth.forgotPassword(email);
+      toast.info("A new code is on its way.");
+    } catch (err) {
+      setFormError(errorMessage(err));
+    }
+  };
+  const mockCode = config.mock && !config.liveAuth ? mockLastResetCode() : "";
+
   return (
-    <AuthLayout title="Set a new password" subtitle="Choose a strong password you don't use elsewhere.">
+    <AuthLayout title="Enter your code" subtitle={`If ${email} has an account, we sent a 6-digit code to it. It expires in 10 minutes.`}>
       <form className="auth-form" onSubmit={submit} noValidate>
         {formError && (
           <div className="form-error" role="alert">
-            {formError} <Link to="/forgot-password">Request a new link</Link>
+            {formError}
           </div>
         )}
+        {mockCode && <p className="field-hint">Mock mode (no email is sent): your code is <b>{mockCode}</b></p>}
+        <Input label="6-digit code" icon="key" value={code} onChange={setCode} error={errors.code} inputMode="numeric" autoComplete="one-time-code" maxLength={7} autoFocus placeholder="123456" />
         <div>
-          <Input label="New password" icon="lock" type="password" value={pw} onChange={setPw} error={errors.pw} autoComplete="new-password" autoFocus />
+          <Input label="New password" icon="lock" type="password" value={pw} onChange={setPw} error={errors.pw} autoComplete="new-password" />
           {pw && (
             <>
               <div className="strength" data-level={strength.level} aria-hidden="true"><i /><i /><i /><i /></div>
@@ -71,6 +96,11 @@ export default function ResetPasswordPage() {
         <Input label="Confirm new password" icon="lock" type="password" value={confirm} onChange={setConfirm} error={errors.confirm} autoComplete="new-password" />
         <Button type="submit" block loading={loading}>Update password</Button>
       </form>
+      <p className="auth-alt">
+        {cooldown > 0 ? <span>Resend code in {cooldown}s</span> : <button type="button" className="link-btn" onClick={() => void resend()}>Resend code</button>}
+        {" · "}
+        <Link to="/forgot-password">Use a different email</Link>
+      </p>
     </AuthLayout>
   );
 }
