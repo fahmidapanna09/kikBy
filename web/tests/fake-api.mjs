@@ -13,9 +13,9 @@ const refresh = new Map(); // token -> {userId, used}
 const friendships = []; // {a (requester), b (addressee), status, since}
 const blocks = new Set(); // "blocker>blocked"
 const notifs = []; // {id,user_id,kind,title,body,actor_id,read,created_at}
-const resets = new Map(); // tokenHash -> {userId, used}
+const resets = new Map(); // userId -> {code, attempts, used}  (6-digit code, 5 wrong guesses burn it)
 export const db = { users };
-export const log = { refreshCalls: 0, resetLinks: [], logouts: 0, verifyCodes: [] };
+export const log = { refreshCalls: 0, resetCodes: [], logouts: 0, verifyCodes: [] };
 const verifyTokens = new Map(); // tokenHash -> {userId, email, used, exp, created}
 const VERIFY_TTL_MS = Number(process.env.FAKE_VERIFY_TTL_MS ?? 600000);
 const VERIFY_COOLDOWN_MS = Number(process.env.FAKE_VERIFY_COOLDOWN_MS ?? 60000);
@@ -440,15 +440,20 @@ export function start(port) {
     }
     if (req.method === "POST" && path === "/v1/auth/forgot-password") {
       const u = [...users.values()].find((x) => x.email === String(body.email || "").trim().toLowerCase());
-      if (u) { const raw = randomUUID(); resets.set(sha(raw), { userId: u.id, used: false }); log.resetLinks.push(raw); }
+      if (u) { const code = String(100000 + Math.floor(Math.random() * 900000)); resets.set(u.id, { code, attempts: 0, used: false }); log.resetCodes.push(code); }
       return json(res, 202, { status: "if_account_exists_email_sent" });
     }
     if (req.method === "POST" && path === "/v1/auth/reset-password") {
       if (pwErr(body.password || "")) return err(res, 422, "validation", "please fix the highlighted fields", { password: pwErr(body.password) });
-      const t = resets.get(sha(body.token || ""));
-      if (!t || t.used) return err(res, 400, "invalid_token", "this reset link is invalid or has expired");
-      t.used = true; users.get(t.userId).pw = body.password; users.get(t.userId).verified = true; /* the reset link proves the mailbox */
-      for (const v of refresh.values()) if (v.userId === t.userId) v.used = true;
+      const u = [...users.values()].find((x) => x.email === String(body.email || "").trim().toLowerCase());
+      const t = u && resets.get(u.id);
+      if (!t || t.used) return err(res, 400, "invalid_code", "That code is wrong or has expired.");
+      if (String(body.code || "").replace(/[\s-]/g, "") !== t.code) {
+        if (++t.attempts >= 5) { t.used = true; return err(res, 429, "too_many_attempts", "Too many wrong codes. Request a new code and try again."); }
+        return err(res, 400, "invalid_code", "That code is wrong or has expired.");
+      }
+      t.used = true; u.pw = body.password; u.verified = true; /* the code proves the mailbox */
+      for (const v of refresh.values()) if (v.userId === u.id) v.used = true;
       return json(res, 200, { status: "password_updated" });
     }
     { // GET /v1/users/{id}/avatar is PUBLIC (an <img> cannot send a bearer token): 302 to a signed link, or 404
