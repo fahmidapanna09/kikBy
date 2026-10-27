@@ -290,6 +290,14 @@ function chatRoute(req, res, path, body, authed, helpers) {
   return null;
 }
 function attachWs(srv) {
+  // Presence — mirrors backend/internal/chat/ws_handler.go: peers = accepted friends ∪ people sharing a conversation.
+  const peersOf = (uid) => {
+    const out = new Set();
+    for (const f of friendships) if (f.status === "accepted" && (f.a === uid || f.b === uid)) out.add(f.a === uid ? f.b : f.a);
+    for (const c of convs.values()) if (c.members.includes(uid)) for (const m of c.members) if (m !== uid) out.add(m);
+    return [...out];
+  };
+  const isOnline = (uid) => (sockets.get(uid)?.size ?? 0) > 0;
   const wss = new WebSocketServer({ noServer: true, handleProtocols: (set) => (set.has("kikbite.v1") ? "kikbite.v1" : false) });
   srv.on("upgrade", (req, socket, head) => {
     const protos = String(req.headers["sec-websocket-protocol"] || "").split(",").map((x) => x.trim());
@@ -302,8 +310,14 @@ function attachWs(srv) {
     wss.handleUpgrade(req, socket, head, (ws) => {
       const uid = sess.userId;
       if (!sockets.has(uid)) sockets.set(uid, new Set());
+      const first = sockets.get(uid).size === 0;
       sockets.get(uid).add(ws);
-      ws.on("close", () => { sockets.get(uid)?.delete(ws); dropUserCalls(uid); });
+      if (first) for (const p of peersOf(uid)) pushTo(p, env("presence.update", "", { user_id: uid, online: true }));
+      for (const p of peersOf(uid)) if (isOnline(p)) ws.send(env("presence.update", "", { user_id: p, online: true })); // snapshot on connect
+      ws.on("close", () => {
+        sockets.get(uid)?.delete(ws); dropUserCalls(uid);
+        if (!isOnline(uid)) for (const p of peersOf(uid)) pushTo(p, env("presence.update", "", { user_id: uid, online: false, last_seen: new Date().toISOString() }));
+      });
       ws.on("message", (raw) => {
         let e; try { e = JSON.parse(String(raw)); } catch { return; }
         if (typeof e.type === "string" && e.type.startsWith("call.")) return fakeCall(uid, e);
