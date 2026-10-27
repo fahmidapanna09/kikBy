@@ -53,6 +53,12 @@ export function formatDayLabel(iso: ISODate, now = new Date()): string {
 export function formatLastSeen(user: Pick<User, "presence" | "lastSeenAt">): string {
   if (user.presence === "online") return "online";
   if (!user.lastSeenAt) return "offline";
+  const mins = Math.floor((Date.now() - new Date(user.lastSeenAt).getTime()) / 60000);
+  if (Number.isFinite(mins) && mins >= 0) {
+    if (mins < 1) return "active just now";
+    if (mins < 60) return `active ${mins} min ago`;
+    if (mins < 24 * 60) return `active ${Math.floor(mins / 60)} h ago`;
+  }
   return `last seen ${formatListTime(user.lastSeenAt).toLowerCase()}`;
 }
 
