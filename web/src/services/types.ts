@@ -11,7 +11,8 @@ export interface AuthService {
   login(input: { identifier: string; password: string; remember: boolean }): Promise<AuthSession>;
   register(input: { name: string; username: string; email: string; password: string; phone?: string }): Promise<AuthSession>;
   forgotPassword(email: string): Promise<void>;
-  resetPassword(input: { token: string; password: string }): Promise<void>;
+  /** Set a new password using the 6-digit code e-mailed by forgotPassword. */
+  resetPassword(input: { email: string; code: string; password: string }): Promise<void>;
   /** Confirm the e-mail address behind an emailed link (works without a session). */
   verifyEmail(code: string): Promise<void>;
   /** Re-send the verification e-mail for the signed-in user. */

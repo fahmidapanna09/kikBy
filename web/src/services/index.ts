@@ -50,6 +50,6 @@ export const services: Services = config.mock
       throw new Error("Real API services are not implemented yet — set mock:true or implement ./types against ./http.ts");
     })();
 
-export { mockLastResetLink } from "@/mock/authService";
+export { mockLastResetCode } from "@/mock/authService";
 export * from "./errors";
 export * from "./session";
