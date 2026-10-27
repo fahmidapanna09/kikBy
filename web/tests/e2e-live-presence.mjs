@@ -60,6 +60,14 @@ await goOffline();
 await page.waitForFunction(() => /Online now\s*0/.test(document.body.innerText), null, { timeout: 5000 });
 check("Online now drops back to 0", true);
 
+console.log("Alex reloads while Bella is offline: he is told when she was last active");
+await page.reload();
+await page.getByRole("heading", { name: /(Good|Still up).*Alex/ }).waitFor();
+await page.goto(`${BASE}/friends`);
+await page.getByText(/active (just now|\d+ min ago)/).first().waitFor({ timeout: 5000 });
+check("an offline friend shows 'active … ago' (not just 'offline')", true);
+await page.goto(`${BASE}/`);
+
 console.log("Bella is already online when Alex opens the app (snapshot on connect)");
 await goOnline();
 await page.reload();

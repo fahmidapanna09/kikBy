@@ -297,6 +297,7 @@ function attachWs(srv) {
     for (const c of convs.values()) if (c.members.includes(uid)) for (const m of c.members) if (m !== uid) out.add(m);
     return [...out];
   };
+  const lastSeen = new Map();
   const isOnline = (uid) => (sockets.get(uid)?.size ?? 0) > 0;
   const wss = new WebSocketServer({ noServer: true, handleProtocols: (set) => (set.has("kikbite.v1") ? "kikbite.v1" : false) });
   srv.on("upgrade", (req, socket, head) => {
@@ -313,10 +314,13 @@ function attachWs(srv) {
       const first = sockets.get(uid).size === 0;
       sockets.get(uid).add(ws);
       if (first) for (const p of peersOf(uid)) pushTo(p, env("presence.update", "", { user_id: uid, online: true }));
-      for (const p of peersOf(uid)) if (isOnline(p)) ws.send(env("presence.update", "", { user_id: p, online: true })); // snapshot on connect
+      for (const p of peersOf(uid)) {
+        if (isOnline(p)) ws.send(env("presence.update", "", { user_id: p, online: true })); // snapshot on connect
+        else if (lastSeen.has(p)) ws.send(env("presence.update", "", { user_id: p, online: false, last_seen: lastSeen.get(p) }));
+      }
       ws.on("close", () => {
         sockets.get(uid)?.delete(ws); dropUserCalls(uid);
-        if (!isOnline(uid)) for (const p of peersOf(uid)) pushTo(p, env("presence.update", "", { user_id: uid, online: false, last_seen: new Date().toISOString() }));
+        if (!isOnline(uid)) { const at = new Date().toISOString(); lastSeen.set(uid, at); for (const p of peersOf(uid)) pushTo(p, env("presence.update", "", { user_id: uid, online: false, last_seen: at })); }
       });
       ws.on("message", (raw) => {
         let e; try { e = JSON.parse(String(raw)); } catch { return; }
