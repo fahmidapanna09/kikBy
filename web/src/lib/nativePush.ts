@@ -9,6 +9,7 @@ import { navigate } from "@/lib/router";
 interface PushPlugin {
   requestPermissions(): Promise<{ receive: string }>;
   register(): Promise<void>;
+  createChannel?(c: { id: string; name: string; description?: string; importance: number; visibility?: number; vibration?: boolean }): Promise<void>;
   addListener(ev: string, cb: (e: any) => void): unknown;
 }
 interface CapacitorGlobal {
@@ -48,6 +49,8 @@ export async function setupPush(): Promise<void> {
   try {
     const perm = await p.requestPermissions();
     if (perm.receive !== "granted") return;
+    // Loud channel for incoming calls (the server's call pushes name it); messages use the "kikbite" channel.
+    await p.createChannel?.({ id: "kikbite_calls", name: "Incoming calls", description: "Rings when someone calls you", importance: 5, visibility: 1, vibration: true }).catch(() => undefined);
     await p.register();
   } catch (e) {
     console.warn("push: setup failed", e);
