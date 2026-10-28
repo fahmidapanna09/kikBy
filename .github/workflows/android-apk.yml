@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm install
-          npm install @capacitor/core@7 @capacitor/android@7 @capacitor/local-notifications@7
+          npm install @capacitor/core@7 @capacitor/android@7 @capacitor/local-notifications@7 @capacitor/push-notifications@7
           npm install -D @capacitor/cli@7
       - name: Build web
         run: npm run build
@@ -29,6 +29,16 @@ jobs:
         run: |
           if [ ! -d android ]; then npx cap add android; fi
           node scripts/android-setup.mjs patch
+      - name: Firebase config (push notifications)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+            echo "Firebase config installed: push notifications enabled"
+          else
+            echo "No GOOGLE_SERVICES_JSON secret: building without push (the app still works)"
+          fi
       - name: Sync with site address
         env:
           KIKBITE_URL: ${{ vars.KIKBITE_URL }}
