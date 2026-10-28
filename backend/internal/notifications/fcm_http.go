@@ -169,6 +169,25 @@ func describePush(kind string, payload []byte) (title, body, path string) {
 	}
 }
 
+// androidConfig: messages use the normal channel; an incoming call uses the loud "calls" channel (heads-up, sound,
+// vibration, visible on the lock screen) and expires after 30 s, so nobody gets "ringing" for a call that is long over.
+func androidConfig(kind string) map[string]any {
+	if kind == "call.incoming" {
+		return map[string]any{
+			"priority": "HIGH",
+			"ttl":      "30s",
+			"notification": map[string]any{
+				"channel_id":              "kikbite_calls",
+				"sound":                   "default",
+				"default_vibrate_timings": true,
+				"notification_priority":   "PRIORITY_MAX",
+				"visibility":              "PUBLIC",
+			},
+		}
+	}
+	return map[string]any{"priority": "HIGH", "notification": map[string]any{"channel_id": "kikbite"}}
+}
+
 // Send delivers one push. 404/UNREGISTERED and invalid-token answers become ErrInvalidToken.
 func (f *FCMSender) Send(ctx context.Context, fcmToken, kind string, payload []byte) error {
 	access, err := f.accessToken(ctx)
@@ -180,10 +199,7 @@ func (f *FCMSender) Send(ctx context.Context, fcmToken, kind string, payload []b
 		"token":        fcmToken,
 		"notification": map[string]string{"title": title, "body": body},
 		"data":         map[string]string{"kind": kind, "path": path},
-		"android": map[string]any{
-			"priority":     "HIGH",
-			"notification": map[string]any{"channel_id": "kikbite"},
-		},
+		"android":      androidConfig(kind),
 	}}
 	buf, err := json.Marshal(msg)
 	if err != nil {
