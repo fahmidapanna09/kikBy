@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -41,9 +42,19 @@ func main() {
 
 	outbox := notifications.NewOutbox(pgPool)
 	tokens := notifications.NewTokenRepository(pgPool)
-	// Swap LoggingStubSender for a real firebase-admin sender once FCM
-	// service account credentials are provisioned (see notifications/fcm.go).
-	sender := notifications.LoggingStubSender{Log: log}
+	// Real Firebase push when FCM_SERVICE_ACCOUNT_JSON (the service-account key, raw JSON or base64) is set;
+	// otherwise pushes are only logged.
+	var sender notifications.PushSender = notifications.LoggingStubSender{Log: log}
+	if raw := os.Getenv("FCM_SERVICE_ACCOUNT_JSON"); raw != "" {
+		fcm, err := notifications.NewFCMSenderFromJSON(raw)
+		if err != nil {
+			log.Fatal("worker: FCM_SERVICE_ACCOUNT_JSON is set but invalid", zap.Error(err))
+		}
+		sender = fcm
+		log.Info("push: Firebase Cloud Messaging enabled")
+	} else {
+		log.Warn("push: FCM_SERVICE_ACCOUNT_JSON is not set - push notifications are only logged, not sent")
+	}
 	notificationWorker := notifications.NewWorker(outbox, tokens, sender, log)
 
 	s3Client, err := media.NewS3Client(context.Background(), media.S3Config{

@@ -2,6 +2,7 @@ package notifications
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go.uber.org/zap"
@@ -69,6 +70,10 @@ func (w *Worker) processBatch(ctx context.Context) {
 		var lastErr error
 		for _, tok := range tokens {
 			if err := w.sender.Send(ctx, tok, item.Kind, item.Payload); err != nil {
+				if errors.Is(err, ErrInvalidToken) {
+					_ = w.tokens.DeleteToken(ctx, tok) // dead token: forget it, nothing to retry
+					continue
+				}
 				lastErr = err
 			}
 		}

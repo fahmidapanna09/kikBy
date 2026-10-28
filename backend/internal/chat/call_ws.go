@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -15,6 +16,19 @@ import (
 // EnableCalls turns on voice / video / group calls. Without it call events are answered with a "calls_disabled" error.
 func (s *Service) EnableCalls(ice IceConfig) {
 	s.calls = NewCallService(s.repo, s.hub, ice, s.isBlockedPair)
+	s.calls.push = func(ctx context.Context, toUserID, fromUserID, conversationID string) {
+		if s.outbox == nil || s.hub.SubscriberCount(ctx, toUserID) > 0 {
+			return // connected right now: the socket already rings them
+		}
+		payload, err := json.Marshal(map[string]any{
+			"conversation_id": conversationID,
+			"from_user_id":    fromUserID,
+			"sender_name":     s.repo.DisplayNameOf(ctx, fromUserID),
+		})
+		if err == nil {
+			_ = s.outbox.Enqueue(ctx, toUserID, "call.incoming", payload)
+		}
+	}
 }
 
 func callErrorCode(err error) (string, string) {

@@ -41,6 +41,8 @@ type CallService struct {
 	blocked     func(ctx context.Context, conversationID, userID string) (bool, error)
 	now         func() time.Time
 	ringTimeout time.Duration
+	// push (optional) is told about every person a call rings, so an offline phone can get a push notification.
+	push func(ctx context.Context, toUserID, fromUserID, conversationID string)
 
 	mu     sync.Mutex
 	timers map[string]*time.Timer
@@ -97,6 +99,9 @@ func (s *CallService) Start(ctx context.Context, conversationID, userID, kind st
 	for _, m := range members {
 		if m != userID {
 			s.send(ctx, m, EventCallIncoming, conversationID, CallIncomingPayload{Call: call, FromUserID: userID})
+			if s.push != nil {
+				s.push(ctx, m, userID, conversationID)
+			}
 		}
 	}
 	s.send(ctx, userID, EventCallJoined, conversationID, CallJoinedPayload{Call: call, Participants: []string{}, IceServers: s.ice.ServersFor(userID, s.now())})

@@ -177,6 +177,10 @@ func (s *Service) SendMessage(ctx context.Context, conversationID, senderID, sen
 		if pubErr := s.hub.Publish(ctx, recipientID, env); pubErr != nil {
 			online = false // publish failed; fall back to push so the message isn't silently dropped
 		}
+		// The presence key outlives a dropped socket by the offline grace period; a live subscription is the truth.
+		if s.hub.SubscriberCount(ctx, recipientID) == 0 {
+			online = false
+		}
 
 		if !online {
 			if err := s.enqueuePush(ctx, recipientID, msg); err != nil {
@@ -196,6 +200,7 @@ func (s *Service) enqueuePush(ctx context.Context, recipientID string, msg Messa
 		"conversation_id": msg.ConversationID,
 		"message_id":      msg.ID,
 		"sender_id":       msg.SenderID,
+		"sender_name":     s.repo.DisplayNameOf(ctx, msg.SenderID),
 		"preview":         previewFor(msg),
 	})
 	if err != nil {

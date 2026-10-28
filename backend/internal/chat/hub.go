@@ -159,6 +159,16 @@ func (h *Hub) Publish(ctx context.Context, userID string, env Envelope) error {
 	return h.rdb.Publish(ctx, userChannel(userID), data).Err()
 }
 
+// SubscriberCount is how many nodes currently hold a live socket for the user (0 = nobody is connected, so a push
+// is the only way to reach them). On a Redis error it answers 0: better one extra push than a missed one.
+func (h *Hub) SubscriberCount(ctx context.Context, userID string) int64 {
+	m, err := h.rdb.PubSubNumSub(ctx, userChannel(userID)).Result()
+	if err != nil {
+		return 0
+	}
+	return m[userChannel(userID)]
+}
+
 // PublishEvent is a convenience wrapper for callers outside this package
 // (e.g. stories.Service) that just want to push a typed event to a user
 // without building an Envelope themselves — satisfies stories.EventPublisher

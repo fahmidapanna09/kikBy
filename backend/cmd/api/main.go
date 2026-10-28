@@ -157,6 +157,7 @@ func main() {
 	chatSvc := chat.NewService(chatRepo, chatHub, chatPresence, outbox, mediaSvc, contactsRepo)
 	chatSvc.EnableCalls(chat.IceConfigFromEnv()) // voice / video / group calls (WebRTC signaling); media is peer-to-peer
 	chatHandler := chat.NewHandler(chatSvc, log)
+	pushHandler := notifications.NewHandler(notifications.NewTokenRepository(pgPool), log)
 	chatWSHandler := chat.NewWSHandler(chatSvc, chatHub, chatPresence, authSvc, log)
 	chatWSHandler.SetAllowedOrigins(wsAllowedOrigins(cfg.Env, os.Getenv("APP_BASE_URL"), os.Getenv("WS_ALLOWED_ORIGINS")))
 
@@ -260,6 +261,10 @@ func main() {
 
 	r.Route("/v1/friends", func(r chi.Router) {
 		r.Mount("/", friendsHandler.Routes(authSvc))
+	})
+
+	r.Route("/v1/push", func(r chi.Router) {
+		r.Mount("/", pushHandler.Routes(authSvc))
 	})
 
 	r.Route("/v1/notifications", func(r chi.Router) {

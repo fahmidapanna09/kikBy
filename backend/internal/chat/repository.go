@@ -399,3 +399,13 @@ func (r *Repository) ListAttachmentInfo(ctx context.Context, messageID string) (
 	}
 	return msgs[0].Attachments, nil
 }
+
+// DisplayNameOf is the name shown in push notifications: the profile name, else the username ("" if unknown).
+func (r *Repository) DisplayNameOf(ctx context.Context, userID string) string {
+	var name string
+	_ = r.pool.QueryRow(ctx, `
+		SELECT COALESCE(NULLIF(p.display_name, ''), u.username, '')
+		FROM users u LEFT JOIN user_profiles p ON p.user_id = u.id
+		WHERE u.id = $1`, userID).Scan(&name)
+	return name
+}

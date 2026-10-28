@@ -17,6 +17,11 @@ func NewTokenRepository(pool *pgxpool.Pool) *TokenRepository {
 // RegisterToken upserts by device_id: a device's FCM token can rotate
 // (Firebase does this periodically) without creating duplicate rows.
 func (t *TokenRepository) RegisterToken(ctx context.Context, userID, deviceRowID, fcmToken string) error {
+	// The same phone can be signed in as someone else later: a token belongs to exactly one device row, so the
+	// previous owner never receives the new person's notifications.
+	if _, err := t.pool.Exec(ctx, `DELETE FROM push_tokens WHERE fcm_token = $1 AND device_id <> $2`, fcmToken, deviceRowID); err != nil {
+		return err
+	}
 	_, err := t.pool.Exec(ctx, `
 		INSERT INTO push_tokens (user_id, device_id, fcm_token)
 		VALUES ($1, $2, $3)
@@ -45,5 +50,11 @@ func (t *TokenRepository) TokensForUser(ctx context.Context, userID string) ([]s
 
 func (t *TokenRepository) DeleteToken(ctx context.Context, fcmToken string) error {
 	_, err := t.pool.Exec(ctx, `DELETE FROM push_tokens WHERE fcm_token = $1`, fcmToken)
+	return err
+}
+
+// DeleteForDevice drops the token of one signed-in device (called on logout).
+func (t *TokenRepository) DeleteForDevice(ctx context.Context, userID, deviceRowID string) error {
+	_, err := t.pool.Exec(ctx, `DELETE FROM push_tokens WHERE user_id = $1 AND device_id = $2`, userID, deviceRowID)
 	return err
 }
