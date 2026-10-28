@@ -15,6 +15,9 @@ const config = {
   server: url
     ? { url, cleartext: url.startsWith("http://"), androidScheme: "https" }
     : { androidScheme: "https" },
+  plugins: {
+    LocalNotifications: { smallIcon: "ic_stat_kikbite", iconColor: "#4f46e5" },
+  },
   android: {
     allowMixedContent: false,
     backgroundColor: "#070B16",

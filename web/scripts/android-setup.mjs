@@ -36,10 +36,26 @@ export function patchManifest(xml) {
   need("uses-permission", "android.permission.VIBRATE", '<uses-permission android:name="android.permission.VIBRATE" />');
   need("uses-feature", "android.hardware.camera", '<uses-feature android:name="android.hardware.camera" android:required="false" />');
   need("uses-feature", "android.hardware.microphone", '<uses-feature android:name="android.hardware.microphone" android:required="false" />');
-  if (!lines.length) return xml;
-  if (!xml.includes("</manifest>")) throw new Error("AndroidManifest.xml has no </manifest> tag");
-  return xml.replace("</manifest>", `\n    <!-- KikBite: calls + notifications -->\n${lines.join("\n")}\n</manifest>`);
+  if (lines.length) {
+    if (!xml.includes("</manifest>")) throw new Error("AndroidManifest.xml has no </manifest> tag");
+    xml = xml.replace("</manifest>", `\n    <!-- KikBite: calls + notifications -->\n${lines.join("\n")}\n</manifest>`);
+  }
+  // Push notifications: a white status-bar icon (the coloured launcher icon would show as a white square) and the brand colour.
+  if (!xml.includes("com.google.firebase.messaging.default_notification_icon") && xml.includes("</application>")) {
+    xml = xml.replace(
+      "</application>",
+      `    <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_kikbite" />\n        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/kikbite_brand" />\n        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="kikbite" />\n    </application>`,
+    );
+  }
+  return xml;
 }
+
+/** Simple white chat-bubble glyph for the status bar. */
+const STAT_ICON = `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M20,2H4C2.9,2 2,2.9 2,4v18l4,-4h14c1.1,0 2,-0.9 2,-2V4C22,2.9 21.1,2 20,2z"/>
+</vector>
+`;
 
 function copyDir(src, dst) {
   mkdirSync(dst, { recursive: true });
@@ -67,7 +83,10 @@ function patchAll() {
     copyDir(icons, resDir);
     console.log("✔ KikBite launcher icons installed");
   }
+  mkdirSync(join(resDir, "drawable"), { recursive: true });
+  writeFileSync(join(resDir, "drawable", "ic_stat_kikbite.xml"), STAT_ICON);
   mkdirSync(join(resDir, "values"), { recursive: true });
+  writeFileSync(join(resDir, "values", "kikbite_colors.xml"), `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="kikbite_brand">${brand}</color>\n</resources>\n`);
   writeFileSync(
     join(resDir, "values", "ic_launcher_background.xml"),
     `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">${brand}</color>\n</resources>\n`,

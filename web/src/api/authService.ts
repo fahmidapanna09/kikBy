@@ -4,6 +4,7 @@ import { http, setRefresher } from "@/services/http";
 import { session } from "@/services/session";
 import { normalizePhone } from "@/lib/validation";
 import { deviceId } from "./device";
+import { dropPushToken } from "@/lib/nativePush";
 import { toUser, type ApiMe, type ApiTokens } from "./mappers";
 
 interface ApiAuthResponse {
@@ -112,6 +113,7 @@ export const liveAuthService: AuthService = {
     const s = session.get();
     clearTimeout(timer);
     try {
+      await dropPushToken();
       if (s) await http("/auth/logout", { method: "POST", body: { refresh_token: s.refreshToken }, auth: true });
     } catch {
       /* best effort: the local session is cleared regardless */

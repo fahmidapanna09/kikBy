@@ -1,5 +1,6 @@
 import { ensureUsers } from "@/api/chatService";
 import { setupNotifications } from "@/lib/nativeNotify";
+import { setupPush } from "@/lib/nativePush";
 import { config } from "@/services/config";
 import { session } from "@/services/session";
 import { loadConversations, loadFriends } from "@/state/actions";
@@ -44,7 +45,7 @@ export function startRealtime() {
     }),
   ];
   socket.connect();
-  if (live || config.liveAuth) void setupNotifications();
+  if (live || config.liveAuth) void setupNotifications().then(() => setupPush());
   if (live || config.liveAuth) {
     // Coming back to the app (phone unlocked, tab re-focused): pick up friend changes made while it was in the background.
     const onVisible = () => {
