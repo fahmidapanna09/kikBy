@@ -128,7 +128,7 @@ export function NotificationsSection() {
       <Section title="Alerts">
         <ToggleRow title="Messages" desc="New direct messages." checked={n.messages} onChange={(v) => void update("notifications", { messages: v })} />
         <ToggleRow title="Groups" desc="Messages in group chats." checked={n.groups} onChange={(v) => void update("notifications", { groups: v })} />
-        <ToggleRow title="Friend requests" checked={n.friendRequests} onChange={(v) => void update("notifications", { friendRequests: v })} />
+        <ToggleRow title="New followers" checked={n.friendRequests} onChange={(v) => void update("notifications", { friendRequests: v })} />
       </Section>
       <Section title="Behaviour">
         <ToggleRow title="Sound" checked={n.sound} onChange={(v) => void update("notifications", { sound: v })} />

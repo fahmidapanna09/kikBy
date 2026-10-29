@@ -566,15 +566,15 @@ export function start(port) {
           if (!t || blocks.has(t.id + ">" + authed.id)) return err(res, 404, "not_found", "not found");
           if (blocks.has(authed.id + ">" + t.id)) return err(res, 409, "blocked", "unblock this user first");
           const ex = pair(authed.id, t.id);
-          if (ex && ex.status === "pending" && ex.b === authed.id) { ex.status = "accepted"; ex.since = new Date().toISOString(); notify(t.id, "friend_accept", authed.display_name + " accepted your request", "You are now friends.", authed.id); }
-          else if (!ex) { friendships.push({ a: authed.id, b: t.id, status: "pending" }); notify(t.id, "friend_request", authed.display_name + " sent you a friend request", "Open Friends to respond.", authed.id); }
+          if (ex && ex.status === "pending" && ex.b === authed.id) { ex.status = "accepted"; ex.since = new Date().toISOString(); notify(t.id, "friend_accept", authed.display_name + " followed you back", "You are now friends. You can chat and see each other's status.", authed.id); }
+          else if (!ex) { friendships.push({ a: authed.id, b: t.id, status: "pending" }); notify(t.id, "friend_request", authed.display_name + " started following you", "Follow back to become friends.", authed.id); }
           return json(res, 200, relationsOf(authed.id, t.id)[0]);
         }
         if (req.method === "POST" && seg[3] === "accept") {
           const f = pair(authed.id, other);
           if (!f || f.status !== "pending" || f.b !== authed.id) return err(res, 404, "not_found", "not found");
           f.status = "accepted"; f.since = new Date().toISOString();
-          notify(other, "friend_accept", authed.display_name + " accepted your request", "You are now friends.", authed.id);
+          notify(other, "friend_accept", authed.display_name + " followed you back", "You are now friends. You can chat and see each other's status.", authed.id);
           return json(res, 200, relationsOf(authed.id, other)[0]);
         }
         if (req.method === "DELETE" && seg[2] === "requests") {
@@ -588,7 +588,8 @@ export function start(port) {
         if (req.method === "DELETE" && seg.length === 3) {
           const f = pair(authed.id, other);
           if (!f || f.status !== "accepted") return err(res, 404, "not_found", "not found");
-          friendships.splice(friendships.indexOf(f), 1);
+          // unfollow: they keep following me → pending other → me
+          f.a = other; f.b = authed.id; f.status = "pending"; delete f.since;
           return json(res, 200, { status: "removed" });
         }
       } else {

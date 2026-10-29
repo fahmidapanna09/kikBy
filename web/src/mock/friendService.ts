@@ -43,7 +43,8 @@ export const friendService: FriendService = {
   async remove(userId) {
     await delay(150, 300);
     const { s } = find(userId);
-    s.friends = s.friends.filter((x) => !(x.user.id === userId && x.status === "friends"));
+    const f = s.friends.find((x) => x.user.id === userId && x.status === "friends");
+    if (f) { f.status = "incoming"; f.since = undefined; } // unfollow: they still follow me
   },
   async block(userId) {
     await delay(150, 300);

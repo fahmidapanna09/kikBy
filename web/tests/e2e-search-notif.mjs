@@ -20,8 +20,8 @@ check("friend action on result", await page.getByRole("button", { name: /Remove 
 await box.fill("@zubair");
 await page.getByText("Zubair Alam").first().waitFor();
 check("@username search", true);
-await page.getByRole("button", { name: "Add friend" }).click();
-await page.getByText(/Friend request sent/).waitFor();
+await page.getByRole("button", { name: "Follow", exact: true }).click();
+await page.getByText(/You are following/).waitFor();
 check("add friend from results", true);
 await box.fill("qqqqq");
 await page.getByText("No people found").waitFor();

@@ -165,10 +165,10 @@ export function seedFor(me: User): MockState {
   ];
 
   const notifications: AppNotification[] = [
-    { id: uid("n"), kind: "friend_request", title: "Farhan Ali", body: "sent you a friend request", actorId: "u_farhan", read: false, createdAt: ago(18) },
+    { id: uid("n"), kind: "friend_request", title: "Farhan Ali", body: "started following you", actorId: "u_farhan", read: false, createdAt: ago(18) },
     { id: uid("n"), kind: "message", title: "Aisha Rahman", body: "One more thing: can we make the send button…", actorId: "u_aisha", conversationId: aishaId, read: false, createdAt: ago(3) },
     { id: uid("n"), kind: "mention", title: "KikBite Team", body: "Rafi mentioned you: “@you can you review the PR?”", actorId: "u_rafi", conversationId: gid, read: false, createdAt: ago(70) },
-    { id: uid("n"), kind: "friend_accept", title: "Mim Chowdhury", body: "accepted your friend request", actorId: "u_mim", read: true, createdAt: ago(2900) },
+    { id: uid("n"), kind: "friend_accept", title: "Mim Chowdhury", body: "followed you back", actorId: "u_mim", read: true, createdAt: ago(2900) },
     { id: uid("n"), kind: "system", title: "Welcome to KikBite", body: "Small bites. Big conversations. Complete your profile to get started.", read: true, createdAt: ago(20000) },
   ];
 

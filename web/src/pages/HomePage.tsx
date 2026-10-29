@@ -42,7 +42,7 @@ export default function HomePage() {
         </header>
         <div className="stat-grid">
           <Stat icon="chat" label="Unread messages" value={badges.chats} to="/chats" />
-          <Stat icon="user-plus" label="Friend requests" value={badges.friends} to="/friends" />
+          <Stat icon="user-plus" label="New followers" value={badges.friends} to="/friends" />
           <Stat icon="bell" label="Notifications" value={badges.notifications} to="/notifications" />
         </div>
         <div className="quick-actions">
