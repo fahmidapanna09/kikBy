@@ -1,4 +1,9 @@
-// Package friends implements two-way friend requests (request → accept/decline), friend removal and blocking.
+// Package friends implements follow / follow-back on top of the friendships table:
+//
+//	pending  (requester → addressee)  = requester follows addressee; addressee sees "follows you" and can follow back
+//	accepted                          = both follow each other = friends (chat, presence, calls)
+//
+// Unfollowing a friend keeps the other person's follow alive (the row flips to pending in their direction).
 // Blocking is stored in blocked_users (shared with contacts/stories) so every module sees one source of truth.
 package friends
 
@@ -120,7 +125,7 @@ func (r *Repository) DisplayName(ctx context.Context, id string) (string, error)
 	return n, err
 }
 
-// Request creates a pending friendship me → other. If other already asked me, it is accepted instead (both want it).
+// Request = follow: creates a pending follow me → other. If other already follows me, this is a follow back and the pair becomes friends.
 // created reports whether a NEW pending request was made (the caller notifies only then); accepted reports the mutual case.
 // Any other existing row for the pair (already friends, or I already asked) makes this an idempotent no-op.
 func (r *Repository) Request(ctx context.Context, me, other string) (created, accepted bool, err error) {
@@ -168,9 +173,12 @@ func (r *Repository) DeletePending(ctx context.Context, me, other string) error 
 	return nil
 }
 
+// RemoveFriend is "unfollow" for a mutual pair: I stop following them, but they keep following me, so the row
+// becomes a pending follow other → me (I can follow back later, they see "Following").
 func (r *Repository) RemoveFriend(ctx context.Context, me, other string) error {
 	tag, err := r.pool.Exec(ctx, `
-		DELETE FROM friendships WHERE status = 'accepted'
+		UPDATE friendships SET requester_id = $2, addressee_id = $1, status = 'pending', responded_at = NULL
+		WHERE status = 'accepted'
 		AND ((requester_id = $1 AND addressee_id = $2) OR (requester_id = $2 AND addressee_id = $1))`, me, other)
 	if err != nil {
 		return err
@@ -261,9 +269,9 @@ func (s *Service) SendRequest(ctx context.Context, me, other string) (Relation, 
 	if created || accepted {
 		name, _ := s.repo.DisplayName(ctx, me)
 		if accepted {
-			s.tell(ctx, other, "friend_accept", name+" accepted your request", "You are now friends.", me)
+			s.tell(ctx, other, "friend_accept", name+" followed you back", "You are now friends. You can chat and see each other's status.", me)
 		} else {
-			s.tell(ctx, other, "friend_request", name+" sent you a friend request", "Open Friends to respond.", me)
+			s.tell(ctx, other, "friend_request", name+" started following you", "Follow back to become friends.", me)
 		}
 	}
 	return s.repo.Get(ctx, me, other)
@@ -277,7 +285,7 @@ func (s *Service) Accept(ctx context.Context, me, other string) (Relation, error
 		return Relation{}, err
 	}
 	name, _ := s.repo.DisplayName(ctx, me)
-	s.tell(ctx, other, "friend_accept", name+" accepted your request", "You are now friends.", me)
+	s.tell(ctx, other, "friend_accept", name+" followed you back", "You are now friends. You can chat and see each other's status.", me)
 	return s.repo.Get(ctx, me, other)
 }
 
